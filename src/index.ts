@@ -17,14 +17,41 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint
+// Enhanced health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
+  const healthData = {
     status: 'healthy',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+    timestamp: new Date().toISOString(),
+    uptime: {
+      seconds: Math.floor(process.uptime()),
+      human: formatUptime(process.uptime())
+    },
+    system: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid
+    },
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100,
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100,
+      external: Math.round(process.memoryUsage().external / 1024 / 1024 * 100) / 100,
+      unit: 'MB'
+    },
+    environment: process.env.NODE_ENV || 'development'
+  };
+
+  res.json(healthData);
 });
+
+// Helper function to format uptime
+function formatUptime(uptimeSeconds: number): string {
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = Math.floor(uptimeSeconds % 60);
+  
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
 
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
