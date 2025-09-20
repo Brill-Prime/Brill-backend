@@ -17,11 +17,16 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
     "@types/express": "^5.0.3",
     "@types/node": "^24.5.2",
+    "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.4",
+    "drizzle-orm": "^0.44.5",
     "express": "^5.1.0",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "ws": "^8.18.3"
   }
 }
