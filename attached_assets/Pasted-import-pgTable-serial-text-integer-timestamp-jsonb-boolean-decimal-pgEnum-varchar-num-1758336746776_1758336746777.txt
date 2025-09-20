@@ -1,7 +1,7 @@
 import { 
-  pgTable, serial, text, integer, timestamp, jsonb, boolean, decimal, pgEnum, varchar, numeric, index, check
+  pgTable, serial, text, integer, timestamp, jsonb, boolean, decimal, pgEnum, varchar, numeric, index, check, sql 
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import { z } from 'zod';
 
 // ---------------- Enums ----------------
@@ -455,9 +455,9 @@ export const identityVerifications = pgTable("identity_verifications", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   documentType: text("document_type").notNull(),
-  documentNumber: text("document_number"),
-  documentUrl: text("document_url").notNull(),
-  status: kycStatusEnum("status").default('PENDING'),
+  documentNumber: text("document_number").notNull(),
+  documentImageUrl: text("document_image_url"),
+  verificationStatus: verificationStatusEnum("verification_status").default('PENDING'),
   submittedAt: timestamp("submitted_at").defaultNow(),
   reviewedAt: timestamp("reviewed_at"),
   reviewedBy: integer("reviewed_by").references(() => users.id),
@@ -470,18 +470,18 @@ export const identityVerifications = pgTable("identity_verifications", {
 // ---------------- Error Logs ----------------
 export const errorLogs = pgTable("error_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id), // Nullable for non-user errors
-  errorType: text("error_type").notNull(),
-  errorMessage: text("error_message").notNull(),
-  stackTrace: text("stack_trace"),
-  requestData: jsonb("request_data").default('{}'),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  url: text("url"),
   userAgent: text("user_agent"),
-  ipAddress: text("ip_address"),
-  endpoint: text("endpoint"),
-  createdAt: timestamp("created_at").defaultNow()
+  userId: integer("user_id").references(() => users.id),
+  severity: text("severity").default("MEDIUM"),
+  source: text("source").default("backend"),
+  timestamp: timestamp("timestamp").defaultNow(),
+  metadata: jsonb("metadata").default('{}'),
+  deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  userIdIdx: index("error_logs_user_id_idx").on(table.userId),
-  errorTypeIdx: index("error_logs_error_type_idx").on(table.errorType)
+  userIdIdx: index("error_logs_user_id_idx").on(table.userId)
 }));
 
 // ---------------- MFA Tokens ----------------
@@ -489,14 +489,14 @@ export const mfaTokens = pgTable("mfa_tokens", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   token: text("token").notNull(),
-  purpose: text("purpose").notNull(), // e.g., 'EMAIL_VERIFICATION', 'PASSWORD_RESET', 'MFA_SETUP'
+  method: text("method").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   isUsed: boolean("is_used").default(false),
   usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow()
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  userIdIdx: index("mfa_tokens_user_id_idx").on(table.userId),
-  tokenIdx: index("mfa_tokens_token_idx").on(table.token)
+  userIdIdx: index("mfa_tokens_user_id_idx").on(table.userId)
 }));
 
 // ---------------- Verification Documents ----------------
@@ -504,12 +504,19 @@ export const verificationDocuments = pgTable("verification_documents", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
   documentType: text("document_type").notNull(),
-  documentUrl: text("document_url").notNull(),
-  status: kycStatusEnum("status").default('PENDING'),
-  submittedAt: timestamp("submitted_at").defaultNow(),
-  reviewedAt: timestamp("reviewed_at"),
-  reviewedBy: integer("reviewed_by").references(() => users.id),
+  documentNumber: text("document_number"),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  expiryDate: timestamp("expiry_date"),
+  status: text("status").default('PENDING'),
+  validationScore: decimal("validation_score", { precision: 3, scale: 2 }),
+  extractedData: jsonb("extracted_data").default('{}'),
   rejectionReason: text("rejection_reason"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("verification_documents_user_id_idx").on(table.userId)
@@ -518,46 +525,51 @@ export const verificationDocuments = pgTable("verification_documents", {
 // ---------------- Security Logs ----------------
 export const securityLogs = pgTable("security_logs", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id), // Nullable for system-wide events
-  eventType: text("event_type").notNull(), // e.g., 'LOGIN', 'FAILED_LOGIN', 'PASSWORD_CHANGE'
+  userId: integer("user_id").references(() => users.id),
+  action: text("action").notNull(),
+  details: jsonb("details").default('{}'),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
-  details: jsonb("details").default('{}'),
-  createdAt: timestamp("created_at").defaultNow()
+  severity: text("severity").default('INFO'),
+  timestamp: timestamp("timestamp").defaultNow(),
+  deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  userIdIdx: index("security_logs_user_id_idx").on(table.userId),
-  eventTypeIdx: index("security_logs_event_type_idx").on(table.eventType)
+  userIdIdx: index("security_logs_user_id_idx").on(table.userId)
 }));
 
 // ---------------- Trusted Devices ----------------
 export const trustedDevices = pgTable("trusted_devices", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
-  deviceId: text("device_id").notNull(),
+  deviceToken: text("device_token").unique().notNull(),
   deviceName: text("device_name"),
-  deviceFingerprint: text("device_fingerprint").notNull(),
+  deviceType: text("device_type"),
+  browserInfo: text("browser_info"),
+  lastUsedAt: timestamp("last_used_at"),
+  expiresAt: timestamp("expires_at").notNull(),
   isActive: boolean("is_active").default(true),
-  lastUsedAt: timestamp("last_used_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("trusted_devices_user_id_idx").on(table.userId),
-  deviceIdIdx: index("trusted_devices_device_id_idx").on(table.deviceId)
+  deviceTokenIdx: index("trusted_devices_device_token_idx").on(table.deviceToken)
 }));
 
 // ---------------- Toll Gates ----------------
 export const tollGates = pgTable("toll_gates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  location: text("location").notNull(),
   latitude: decimal("latitude", { precision: 10, scale: 8 }).notNull(),
   longitude: decimal("longitude", { precision: 11, scale: 8 }).notNull(),
-  cost: decimal("cost", { precision: 15, scale: 2 }).notNull(),
+  price: decimal("price", { precision: 15, scale: 2 }).notNull(),
+  operatingHours: jsonb("operating_hours").default('{}'),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   nameIdx: index("toll_gates_name_idx").on(table.name),
-  positiveCost: check("positive_cost", sql`${table.cost} >= 0`)
+  positivePrice: check("positive_price", sql`${table.price} > 0`)
 }));
 
 // ---------------- Suspicious Activities ----------------
@@ -566,28 +578,24 @@ export const suspiciousActivities = pgTable("suspicious_activities", {
   userId: integer("user_id").references(() => users.id),
   activityType: text("activity_type").notNull(),
   description: text("description").notNull(),
-  severity: text("severity").default('MEDIUM'), // 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
-  status: text("status").default('PENDING'), // 'PENDING', 'INVESTIGATED', 'RESOLVED', 'FALSE_POSITIVE'
-  metadata: jsonb("metadata").default('{}'),
+  riskIndicators: jsonb("risk_indicators").default('{}'),
+  timestamp: timestamp("timestamp").defaultNow(),
   ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  detectedAt: timestamp("detected_at").defaultNow(),
-  resolvedAt: timestamp("resolved_at"),
+  deviceFingerprint: text("device_fingerprint"),
+  severity: text("severity").default('MEDIUM'),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  userIdIdx: index("suspicious_activities_user_id_idx").on(table.userId),
-  activityTypeIdx: index("suspicious_activities_activity_type_idx").on(table.activityType)
+  userIdIdx: index("suspicious_activities_user_id_idx").on(table.userId)
 }));
 
 // ---------------- Admin Users ----------------
 export const adminUsers = pgTable("admin_users", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull().unique(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  role: text("role").default('ADMIN'),
   permissions: jsonb("permissions").default('[]'),
-  department: text("department"),
-  isActive: boolean("is_active").default(true),
-  lastActiveAt: timestamp("last_active_at"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("admin_users_user_id_idx").on(table.userId)
@@ -599,12 +607,11 @@ export const complianceDocuments = pgTable("compliance_documents", {
   userId: integer("user_id").references(() => users.id).notNull(),
   documentType: text("document_type").notNull(),
   documentUrl: text("document_url").notNull(),
-  status: kycStatusEnum("status").default('PENDING'),
-  expiryDate: timestamp("expiry_date"),
-  submittedAt: timestamp("submitted_at").defaultNow(),
-  reviewedAt: timestamp("reviewed_at"),
+  status: text("status").default('PENDING'),
   reviewedBy: integer("reviewed_by").references(() => users.id),
-  rejectionReason: text("rejection_reason"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("compliance_documents_user_id_idx").on(table.userId)
@@ -613,18 +620,16 @@ export const complianceDocuments = pgTable("compliance_documents", {
 // ---------------- Content Reports ----------------
 export const contentReports = pgTable("content_reports", {
   id: serial("id").primaryKey(),
-  reportedBy: integer("reported_by").references(() => users.id).notNull(),
-  contentType: text("content_type").notNull(), // e.g., 'MESSAGE', 'PRODUCT', 'USER_PROFILE'
-  contentId: integer("content_id").notNull(),
+  contentType: text("content_type").notNull(),
+  contentId: text("content_id").notNull(),
+  reportedBy: integer("reported_by").references(() => users.id),
   reason: text("reason").notNull(),
-  description: text("description"),
-  status: text("status").default('PENDING'), // 'PENDING', 'UNDER_REVIEW', 'RESOLVED', 'DISMISSED'
+  status: text("status").default('PENDING'),
   createdAt: timestamp("created_at").defaultNow(),
-  resolvedAt: timestamp("resolved_at"),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  reportedByIdx: index("content_reports_reported_by_idx").on(table.reportedBy),
-  contentTypeIdx: index("content_reports_content_type_idx").on(table.contentType)
+  reportedByIdx: index("content_reports_reported_by_idx").on(table.reportedBy)
 }));
 
 // ---------------- Moderation Responses ----------------
@@ -632,9 +637,10 @@ export const moderationResponses = pgTable("moderation_responses", {
   id: serial("id").primaryKey(),
   reportId: integer("report_id").references(() => contentReports.id).notNull(),
   adminId: integer("admin_id").references(() => adminUsers.id).notNull(),
-  action: text("action").notNull(), // e.g., 'CONTENT_REMOVED', 'USER_WARNED', 'NO_ACTION'
-  reason: text("reason"),
-  createdAt: timestamp("created_at").defaultNow()
+  response: text("response").notNull(),
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   reportIdIdx: index("moderation_responses_report_id_idx").on(table.reportId),
   adminIdIdx: index("moderation_responses_admin_id_idx").on(table.adminId)
@@ -646,9 +652,13 @@ export const userLocations = pgTable("user_locations", {
   userId: integer("user_id").references(() => users.id).notNull(),
   latitude: decimal("latitude", { precision: 10, scale: 8 }).notNull(),
   longitude: decimal("longitude", { precision: 11, scale: 8 }).notNull(),
-  address: text("address"),
-  isDefault: boolean("is_default").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
+  heading: decimal("heading", { precision: 5, scale: 2 }),
+  speed: decimal("speed", { precision: 8, scale: 2 }),
+  accuracy: decimal("accuracy", { precision: 8, scale: 2 }),
+  locationType: text("location_type"),
+  timestamp: timestamp("timestamp").defaultNow(),
+  isActive: boolean("is_active").default(true),
+  updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("user_locations_user_id_idx").on(table.userId)
@@ -658,8 +668,8 @@ export const userLocations = pgTable("user_locations", {
 export const paymentMethods = pgTable("payment_methods", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
-  type: text("type").notNull(), // e.g., 'CARD', 'BANK_TRANSFER', 'WALLET'
-  details: jsonb("details").default('{}'), // Encrypted payment details
+  type: text("type").notNull(),
+  details: jsonb("details").notNull(),
   isDefault: boolean("is_default").default(false),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
@@ -672,52 +682,43 @@ export const paymentMethods = pgTable("payment_methods", {
 export const adminPaymentActions = pgTable("admin_payment_actions", {
   id: serial("id").primaryKey(),
   adminId: integer("admin_id").references(() => adminUsers.id).notNull(),
-  transactionId: integer("transaction_id").references(() => transactions.id),
-  action: text("action").notNull(), // e.g., 'REFUND_INITIATED', 'PAYMENT_REVERSED'
-  reason: text("reason").notNull(),
-  amount: decimal("amount", { precision: 15, scale: 2 }),
-  metadata: jsonb("metadata").default('{}'),
-  createdAt: timestamp("created_at").defaultNow()
+  action: text("action").notNull(),
+  paymentId: text("payment_id").notNull(),
+  details: jsonb("details").default('{}'),
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  adminIdIdx: index("admin_payment_actions_admin_id_idx").on(table.adminId),
-  transactionIdIdx: index("admin_payment_actions_transaction_id_idx").on(table.transactionId)
+  adminIdIdx: index("admin_payment_actions_admin_id_idx").on(table.adminId)
 }));
 
 // ---------------- Account Flags ----------------
 export const accountFlags = pgTable("account_flags", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id).notNull(),
-  flagType: text("flag_type").notNull(), // e.g., 'FRAUD_ALERT', 'POLICY_VIOLATION'
+  flagType: text("flag_type").notNull(),
+  severity: text("severity").default('MEDIUM'),
   reason: text("reason").notNull(),
-  severity: text("severity").default('MEDIUM'), // 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
-  status: text("status").default('ACTIVE'), // 'ACTIVE', 'RESOLVED', 'DISMISSED'
-  flaggedBy: integer("flagged_by").references(() => adminUsers.id).notNull(),
+  flaggedBy: integer("flagged_by").references(() => adminUsers.id),
+  status: text("status").default('ACTIVE'),
   resolvedBy: integer("resolved_by").references(() => adminUsers.id),
-  metadata: jsonb("metadata").default('{}'),
-  createdAt: timestamp("created_at").defaultNow(),
   resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  userIdIdx: index("account_flags_user_id_idx").on(table.userId),
-  flagTypeIdx: index("account_flags_flag_type_idx").on(table.flagType)
+  userIdIdx: index("account_flags_user_id_idx").on(table.userId)
 }));
 
 // ---------------- Conversations ----------------
 export const conversations = pgTable("conversations", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").references(() => users.id).notNull(),
-  supportAgentId: integer("support_agent_id").references(() => users.id), // Nullable until assigned
-  subject: text("subject").notNull(),
-  status: text("status").default('OPEN'), // 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'
-  priority: text("priority").default('MEDIUM'), // 'LOW', 'MEDIUM', 'HIGH', 'URGENT'
-  metadata: jsonb("metadata").default('{}'),
+  status: text("status").default('ACTIVE'),
+  lastMessage: text("last_message"),
+  lastMessageAt: timestamp("last_message_at"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  closedAt: timestamp("closed_at"),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
-  customerIdIdx: index("conversations_customer_id_idx").on(table.customerId),
-  supportAgentIdIdx: index("conversations_support_agent_id_idx").on(table.supportAgentId)
+  customerIdIdx: index("conversations_customer_id_idx").on(table.customerId)
 }));
 
 // ---------------- Driver Verifications ----------------
@@ -726,29 +727,37 @@ export const driverVerifications = pgTable("driver_verifications", {
   userId: integer("user_id").references(() => users.id).notNull(),
   documentType: text("document_type").notNull(),
   documentUrl: text("document_url").notNull(),
-  status: kycStatusEnum("status").default('PENDING'),
-  submittedAt: timestamp("submitted_at").defaultNow(),
-  reviewedAt: timestamp("reviewed_at"),
+  status: verificationStatusEnum("status").default('PENDING'),
   reviewedBy: integer("reviewed_by").references(() => users.id),
-  rejectionReason: text("rejection_reason"),
-  expiryDate: timestamp("expiry_date"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
 }, (table) => ({
   userIdIdx: index("driver_verifications_user_id_idx").on(table.userId)
 }));
 
 // ---------------- Relations ----------------
-export const usersRelations = relations(users, ({ many }) => ({
-  driverProfile: many(driverProfiles),
-  merchantProfile: many(merchantProfiles),
-  orders: many(orders),
+export const usersRelations = relations(users, ({ many, one }) => ({
+  ordersAsCustomer: many(orders, { relationName: "customer" }),
+  ordersAsMerchant: many(orders, { relationName: "merchant" }),
+  ordersAsDriver: many(orders, { relationName: "driver" }),
+  driverProfile: one(driverProfiles, {
+    fields: [users.id],
+    references: [driverProfiles.userId]
+  }),
+  merchantProfile: one(merchantProfiles, {
+    fields: [users.id],
+    references: [merchantProfiles.userId]
+  }),
   transactions: many(transactions),
-  ratings: many(ratings),
-  notifications: many(notifications),
   supportTickets: many(supportTickets),
+  ratings: many(ratings),
+  deliveryFeedback: many(deliveryFeedback),
+  messagesSent: many(messages, { relationName: "sender" }),
+  messagesReceived: many(messages, { relationName: "receiver" }),
   auditLogs: many(auditLogs),
   fraudAlerts: many(fraudAlerts),
-  messages: many(messages),
+  notifications: many(notifications),
   identityVerifications: many(identityVerifications),
   errorLogs: many(errorLogs),
   mfaTokens: many(mfaTokens),
@@ -756,7 +765,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   securityLogs: many(securityLogs),
   trustedDevices: many(trustedDevices),
   suspiciousActivities: many(suspiciousActivities),
-  adminUsers: many(adminUsers),
   complianceDocuments: many(complianceDocuments),
   contentReports: many(contentReports),
   userLocations: many(userLocations),
@@ -773,13 +781,11 @@ export const categoriesRelations = relations(categories, ({ many }) => ({
 export const productsRelations = relations(products, ({ one, many }) => ({
   merchant: one(users, {
     fields: [products.merchantId],
-    references: [users.id],
-    relationName: "merchant"
+    references: [users.id]
   }),
   seller: one(users, {
     fields: [products.sellerId],
-    references: [users.id],
-    relationName: "seller"
+    references: [users.id]
   }),
   category: one(categories, {
     fields: [products.categoryId],
@@ -808,10 +814,13 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   transactions: many(transactions),
   ratings: many(ratings),
   deliveryFeedback: many(deliveryFeedback),
-  deliveryConfirmations: many(deliveryConfirmations),
   tracking: many(tracking),
+  messages: many(messages),
   fraudAlerts: many(fraudAlerts),
-  messages: many(messages)
+  deliveryConfirmation: one(deliveryConfirmations, {
+    fields: [orders.id],
+    references: [deliveryConfirmations.orderId]
+  })
 }));
 
 export const escrowsRelations = relations(escrows, ({ one }) => ({
@@ -821,17 +830,15 @@ export const escrowsRelations = relations(escrows, ({ one }) => ({
   }),
   payer: one(users, {
     fields: [escrows.payerId],
-    references: [users.id],
-    relationName: "payer"
+    references: [users.id]
   }),
   payee: one(users, {
     fields: [escrows.payeeId],
-    references: [users.id],
-    relationName: "payee"
+    references: [users.id]
   })
 }));
 
-export const transactionsRelations = relations(transactions, ({ one }) => ({
+export const transactionsRelations = relations(transactions, ({ one, many }) => ({
   user: one(users, {
     fields: [transactions.userId],
     references: [users.id]
@@ -842,18 +849,18 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
   recipient: one(users, {
     fields: [transactions.recipientId],
-    references: [users.id],
-    relationName: "recipient"
+    references: [users.id]
   }),
-  fraudAlerts: one(fraudAlerts, {
-    fields: [transactions.id],
-    references: [fraudAlerts.transactionId]
-  })
+  fraudAlerts: many(fraudAlerts)
 }));
 
 export const driverProfilesRelations = relations(driverProfiles, ({ one }) => ({
   user: one(users, {
     fields: [driverProfiles.userId],
+    references: [users.id]
+  }),
+  kycApprovedBy: one(users, {
+    fields: [driverProfiles.kycApprovedBy],
     references: [users.id]
   })
 }));
@@ -862,27 +869,28 @@ export const merchantProfilesRelations = relations(merchantProfiles, ({ one }) =
   user: one(users, {
     fields: [merchantProfiles.userId],
     references: [users.id]
+  }),
+  kycApprovedBy: one(users, {
+    fields: [merchantProfiles.kycApprovedBy],
+    references: [users.id]
   })
 }));
 
 export const fuelOrdersRelations = relations(fuelOrders, ({ one }) => ({
   customer: one(users, {
     fields: [fuelOrders.customerId],
-    references: [users.id],
-    relationName: "customer"
+    references: [users.id]
   }),
   driver: one(users, {
     fields: [fuelOrders.driverId],
-    references: [users.id],
-    relationName: "driver"
+    references: [users.id]
   })
 }));
 
 export const ratingsRelations = relations(ratings, ({ one }) => ({
   customer: one(users, {
     fields: [ratings.customerId],
-    references: [users.id],
-    relationName: "customer"
+    references: [users.id]
   }),
   order: one(orders, {
     fields: [ratings.orderId],
@@ -890,13 +898,11 @@ export const ratingsRelations = relations(ratings, ({ one }) => ({
   }),
   driver: one(users, {
     fields: [ratings.driverId],
-    references: [users.id],
-    relationName: "driver"
+    references: [users.id]
   }),
   merchant: one(users, {
     fields: [ratings.merchantId],
-    references: [users.id],
-    relationName: "merchant"
+    references: [users.id]
   }),
   product: one(products, {
     fields: [ratings.productId],
@@ -911,13 +917,11 @@ export const deliveryFeedbackRelations = relations(deliveryFeedback, ({ one }) =
   }),
   customer: one(users, {
     fields: [deliveryFeedback.customerId],
-    references: [users.id],
-    relationName: "customer"
+    references: [users.id]
   }),
   driver: one(users, {
     fields: [deliveryFeedback.driverId],
-    references: [users.id],
-    relationName: "driver"
+    references: [users.id]
   })
 }));
 
