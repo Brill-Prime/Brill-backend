@@ -1,5 +1,10 @@
+import cors from 'cors';
 
 import express from 'express';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import session from 'express-session';
+import authRouter from './routes/auth';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -7,8 +12,47 @@ const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
 // Middleware
+// CORS middleware
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+};
+app.use(cors(corsOptions));
+
+// Security middleware
+if (process.env.NODE_ENV === 'production') {
+  app.use(helmet());
+}
+
+// Rate limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use(limiter);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session middleware (required for auth)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'default-session-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000,
+    sameSite: 'strict'
+  }
+}));
+
+// Auth routes
+app.use('/auth', authRouter);
 
 // Basic route
 app.get('/', (req, res) => {
