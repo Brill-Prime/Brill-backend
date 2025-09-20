@@ -1,6 +1,7 @@
 
 import express from 'express';
-import { testConnection } from './db/config';
+import { testConnection, db } from './db/config';
+import { users } from './db/schema';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -43,6 +44,32 @@ app.get('/health', (req, res) => {
   };
 
   res.json(healthData);
+});
+
+// Test database endpoint
+app.get('/test-db', async (req, res) => {
+  try {
+    // Try to fetch all users (limit to 10 for testing)
+    const allUsers = await db.select().from(users).limit(10);
+    
+    res.json({
+      success: true,
+      message: 'Database query successful',
+      data: {
+        totalUsers: allUsers.length,
+        users: allUsers
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Database query error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Database query failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Helper function to format uptime
