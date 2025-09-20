@@ -1,5 +1,6 @@
 
 import express from 'express';
+import { testConnection } from './db/config';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '5000', 10);
@@ -54,7 +55,10 @@ function formatUptime(uptimeSeconds: number): string {
 }
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Test database connection
+  await testConnection();
 });
