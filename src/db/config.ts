@@ -3,10 +3,13 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
 
+// Use Render database URL or fallback to environment variable
+const databaseUrl = process.env.DATABASE_URL || 'postgresql://brillprimemobile:PrveAcaiCfun5AanWQtclfRYJ4LBBaOF@dpg-d2kond3uibrs73eesitg-a.oregon-postgres.render.com/dbbrillprimemobile';
+
 // Database connection pool
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('render.com') ? { rejectUnauthorized: false } : false,
+  connectionString: databaseUrl,
+  ssl: { rejectUnauthorized: false }, // Required for Render PostgreSQL
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
