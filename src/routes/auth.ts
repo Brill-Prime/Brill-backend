@@ -1,7 +1,7 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import { db } from '../db/config';
+import { db } from '../db/db';
 import { users, mfaTokens } from '../db/schema';
 import { eq, and, desc, gte } from 'drizzle-orm';
 import { z } from 'zod';
