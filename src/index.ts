@@ -11,6 +11,7 @@ import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
 import escrowsRouter from './routes/escrows';
 import transactionsRouter from './routes/transactions';
+import driversRouter from './routes/drivers';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -77,6 +78,9 @@ app.use('/api/escrows', escrowsRouter);
 
 // Transactions management routes
 app.use('/api/transactions', transactionsRouter);
+
+// Driver profiles management routes
+app.use('/api/drivers', driversRouter);
 
 // Basic route
 app.get('/', (req, res) => {
