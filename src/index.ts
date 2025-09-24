@@ -21,6 +21,8 @@ import auditLogsRouter from './routes/audit-logs';
 import trackingRouter from './routes/tracking';
 import fraudAlertsRouter from './routes/fraud-alerts';
 import messagesRouter from './routes/messages';
+import contentReportsRouter from './routes/content-reports';
+import moderationResponsesRouter from './routes/moderation-responses';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -158,6 +160,12 @@ app.use('/api/suspicious-activities', suspiciousActivitiesRouter);
 // Admin users management routes
 import adminUsersRouter from './routes/admin-users';
 app.use('/api/admin-users', adminUsersRouter);
+
+// Content reports management routes
+app.use('/api/content-reports', contentReportsRouter);
+
+// Moderation responses management routes
+app.use('/api/moderation-responses', moderationResponsesRouter);
 
 // Basic route
 app.get('/', (req, res) => {
