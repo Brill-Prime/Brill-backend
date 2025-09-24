@@ -20,6 +20,7 @@ import supportTicketsRouter from './routes/support-tickets';
 import auditLogsRouter from './routes/audit-logs';
 import trackingRouter from './routes/tracking';
 import fraudAlertsRouter from './routes/fraud-alerts';
+import messagesRouter from './routes/messages';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -114,6 +115,9 @@ app.use('/api/tracking', trackingRouter);
 
 // Fraud alerts management routes
 app.use('/api/fraud-alerts', fraudAlertsRouter);
+
+// Messages management routes
+app.use('/api/messages', messagesRouter);
 
 // Basic route
 app.get('/', (req, res) => {
