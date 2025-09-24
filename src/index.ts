@@ -13,6 +13,7 @@ import escrowsRouter from './routes/escrows';
 import transactionsRouter from './routes/transactions';
 import driversRouter from './routes/drivers';
 import merchantsRouter from './routes/merchants';
+import fuelOrdersRouter from './routes/fuel-orders';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -85,6 +86,9 @@ app.use('/api/drivers', driversRouter);
 
 // Merchant profiles management routes
 app.use('/api/merchants', merchantsRouter);
+
+// Fuel orders management routes
+app.use('/api/fuel-orders', fuelOrdersRouter);
 
 // Basic route
 app.get('/', (req, res) => {
