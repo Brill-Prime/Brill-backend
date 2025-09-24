@@ -151,6 +151,14 @@ app.use('/api/trusted-devices', trustedDevicesRouter);
 import tollGatesRouter from './routes/toll-gates';
 app.use('/api/toll-gates', tollGatesRouter);
 
+// Suspicious activities management routes
+import suspiciousActivitiesRouter from './routes/suspicious-activities';
+app.use('/api/suspicious-activities', suspiciousActivitiesRouter);
+
+// Admin users management routes
+import adminUsersRouter from './routes/admin-users';
+app.use('/api/admin-users', adminUsersRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
