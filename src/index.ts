@@ -15,6 +15,7 @@ import driversRouter from './routes/drivers';
 import merchantsRouter from './routes/merchants';
 import fuelOrdersRouter from './routes/fuel-orders';
 import ratingsRouter from './routes/ratings';
+import deliveryFeedbackRouter from './routes/delivery-feedback';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -91,12 +92,12 @@ app.use('/api/merchants', merchantsRouter);
 // Fuel orders management routes
 app.use('/api/fuel-orders', fuelOrdersRouter);
 
-// Ratings management routes
-app.use('/api/ratings', ratingsRouter);
+// Delivery feedback management routes
+app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 
 // Basic route
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'Brill Backend API is running!',
     status: 'success',
     timestamp: new Date().toISOString()
@@ -135,7 +136,7 @@ app.get('/test-db', async (req, res) => {
   try {
     // Try to fetch all users (limit to 10 for testing)
     const allUsers = await db.select().from(users).limit(10);
-    
+
     res.json({
       success: true,
       message: 'Database query successful',
@@ -161,7 +162,7 @@ function formatUptime(uptimeSeconds: number): string {
   const hours = Math.floor(uptimeSeconds / 3600);
   const minutes = Math.floor((uptimeSeconds % 3600) / 60);
   const seconds = Math.floor(uptimeSeconds % 60);
-  
+
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
@@ -169,7 +170,7 @@ function formatUptime(uptimeSeconds: number): string {
 app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  
+
   // Test database connection
   await testConnection();
 });
