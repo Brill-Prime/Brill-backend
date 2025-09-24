@@ -135,6 +135,10 @@ app.use('/api/error-logs', errorLogsRouter);
 import mfaTokensRouter from './routes/mfa-tokens';
 app.use('/api/mfa-tokens', mfaTokensRouter);
 
+// Verification documents management routes
+import verificationDocumentsRouter from './routes/verification-documents';
+app.use('/api/verification-documents', verificationDocumentsRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
