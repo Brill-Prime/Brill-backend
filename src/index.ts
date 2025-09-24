@@ -127,6 +127,14 @@ app.use('/api/notifications', notificationsRouter);
 import identityVerificationsRouter from './routes/identity-verifications';
 app.use('/api/identity-verifications', identityVerificationsRouter);
 
+// Error logs management routes
+import errorLogsRouter from './routes/error-logs';
+app.use('/api/error-logs', errorLogsRouter);
+
+// MFA tokens management routes
+import mfaTokensRouter from './routes/mfa-tokens';
+app.use('/api/mfa-tokens', mfaTokensRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
