@@ -9,6 +9,7 @@ import userRouter from './routes/users';
 import categoriesRouter from './routes/categories';
 import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
+import escrowsRouter from './routes/escrows';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -69,6 +70,9 @@ app.use('/api/products', productsRouter);
 
 // Orders management routes
 app.use('/api/orders', ordersRouter);
+
+// Escrows management routes
+app.use('/api/escrows', escrowsRouter);
 
 // Basic route
 app.get('/', (req, res) => {
