@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import session from 'express-session';
 import authRouter from './routes/auth';
+import userRouter from './routes/users';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -53,6 +54,9 @@ app.use(session({
 
 // Auth routes
 app.use('/auth', authRouter);
+
+// User management routes
+app.use('/api/users', userRouter);
 
 // Basic route
 app.get('/', (req, res) => {

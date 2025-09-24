@@ -5,45 +5,6 @@ import { db } from "../db/config";
 import { users } from "../db/schema";
 import { eq } from "drizzle-orm";
 
-// Extend the session interface to include userId and user properties
-declare module 'express-session' {
-  interface SessionData {
-    userId?: number;
-    user?: {
-      id: number;
-      userId: string;
-      fullName: string;
-      email: string;
-      role: string;
-      isVerified: boolean;
-      profilePicture?: string;
-    };
-    lastActivity?: number;
-    ipAddress?: string;
-    userAgent?: string;
-    mfaVerified?: boolean;
-    mfaVerifiedAt?: number;
-  }
-}
-
-// Extend the Request interface to support Passport.js-like methods
-declare global {
-  namespace Express {
-    interface Request {
-      isAuthenticated(): boolean;
-      user?: {
-        id: number;
-        userId: string;
-        fullName: string;
-        email: string;
-        role: string;
-        isVerified: boolean;
-        profilePicture?: string;
-      };
-    }
-  }
-}
-
 // JWT Secret from environment
 const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || 'default-development-secret-key';
 if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-development-secret-key' || !JWT_SECRET)) {
@@ -51,6 +12,128 @@ if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-developmen
 }
 
 // Session timeout (30 minutes)
+const SESSION_TIMEOUT = 30 * 60 * 1000;
+
+// Authentication middleware
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.session.userId || !req.session.user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Check session timeout
+    const now = Date.now();
+    if (req.session.lastActivity && (now - req.session.lastActivity) > SESSION_TIMEOUT) {
+      req.session.destroy((err) => {
+        if (err) console.error('Session destruction error:', err);
+      });
+      return res.status(401).json({
+        success: false,
+        message: 'Session expired'
+      });
+    }
+
+    // Update last activity
+    req.session.lastActivity = now;
+
+    // Set user on request object
+    req.user = req.session.user;
+    
+    // Add isAuthenticated method
+    req.isAuthenticated = () => !!req.session.userId;
+
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authentication error'
+    });
+  }
+};
+
+// Admin authorization middleware
+export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.session.user || req.session.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required'
+      });
+    }
+    next();
+  } catch (error) {
+    console.error('Admin middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authorization error'
+    });
+  }
+};
+
+// Role-based authorization middleware
+export const requireRole = (roles: string[]) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.session.user || !roles.includes(req.session.user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions'
+        });
+      }
+      next();
+    } catch (error) {
+      console.error('Role middleware error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Authorization error'
+      });
+    }
+  };
+};
+
+// Check if user owns resource or is admin
+export const requireOwnershipOrAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const targetUserId = parseInt(req.params.id);
+    const currentUser = req.session.user;
+
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (currentUser.role === 'ADMIN' || currentUser.id === targetUserId) {
+      next();
+    } else {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+  } catch (error) {
+    console.error('Ownership middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authorization error'
+    });
+  }
+};
+
+// Hash password utility
+export const hashPassword = async (password: string): Promise<string> => {
+  return bcrypt.hash(password, 12);
+};
+
+// Verify password utility
+export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  return bcrypt.compare(password, hash);
+};
 const SESSION_TIMEOUT = 30 * 60 * 1000;
 
 // Authentication middleware that adds Passport.js-like methods to req
