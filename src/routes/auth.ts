@@ -53,8 +53,8 @@ router.post('/login', async (req, res) => {
     }
 
     // Create session
-    req.session.userId = user.id;
-    req.session.user = {
+    (req.session as any).userId = user.id;
+    (req.session as any).user = {
       id: user.id,
       userId: user.id.toString(),
       email: user.email,
@@ -145,8 +145,8 @@ router.post('/register', async (req, res) => {
     }
 
     // Create session but mark as unverified
-    req.session.userId = newUser.id;
-    req.session.user = {
+    (req.session as any).userId = newUser.id;
+    (req.session as any).user = {
       id: newUser.id,
       userId: newUser.id.toString(),
       email: newUser.email,

@@ -14,128 +14,6 @@ if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-developmen
 // Session timeout (30 minutes)
 const SESSION_TIMEOUT = 30 * 60 * 1000;
 
-// Authentication middleware
-export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!req.session.userId || !req.session.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    // Check session timeout
-    const now = Date.now();
-    if (req.session.lastActivity && (now - req.session.lastActivity) > SESSION_TIMEOUT) {
-      req.session.destroy((err) => {
-        if (err) console.error('Session destruction error:', err);
-      });
-      return res.status(401).json({
-        success: false,
-        message: 'Session expired'
-      });
-    }
-
-    // Update last activity
-    req.session.lastActivity = now;
-
-    // Set user on request object
-    req.user = req.session.user;
-    
-    // Add isAuthenticated method
-    req.isAuthenticated = () => !!req.session.userId;
-
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Authentication error'
-    });
-  }
-};
-
-// Admin authorization middleware
-export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    if (!req.session.user || req.session.user.role !== 'ADMIN') {
-      return res.status(403).json({
-        success: false,
-        message: 'Admin access required'
-      });
-    }
-    next();
-  } catch (error) {
-    console.error('Admin middleware error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Authorization error'
-    });
-  }
-};
-
-// Role-based authorization middleware
-export const requireRole = (roles: string[]) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      if (!req.session.user || !roles.includes(req.session.user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Insufficient permissions'
-        });
-      }
-      next();
-    } catch (error) {
-      console.error('Role middleware error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Authorization error'
-      });
-    }
-  };
-};
-
-// Check if user owns resource or is admin
-export const requireOwnershipOrAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const targetUserId = parseInt(req.params.id);
-    const currentUser = req.session.user;
-
-    if (!currentUser) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    if (currentUser.role === 'ADMIN' || currentUser.id === targetUserId) {
-      next();
-    } else {
-      res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-  } catch (error) {
-    console.error('Ownership middleware error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Authorization error'
-    });
-  }
-};
-
-// Hash password utility
-export const hashPassword = async (password: string): Promise<string> => {
-  return bcrypt.hash(password, 12);
-};
-
-// Verify password utility
-export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
-  return bcrypt.compare(password, hash);
-};
-const SESSION_TIMEOUT = 30 * 60 * 1000;
-
 // Authentication middleware that adds Passport.js-like methods to req
 export function setupAuth() {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -179,16 +57,6 @@ export function setupAuth() {
       if (req.session.userAgent && req.session.userAgent !== currentUA) {
         console.warn(`User agent mismatch for user ${req.session.userId}`);
       }
-    }
-
-    // Add isAuthenticated method
-    req.isAuthenticated = () => {
-      return !!(req.session?.userId && req.session?.user);
-    };
-
-    // Add user property from session
-    if (req.session?.user) {
-      req.user = req.session.user;
     }
 
     next();
@@ -299,6 +167,25 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+// Admin authorization middleware
+export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.session?.user || req.session.user.role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required'
+      });
+    }
+    next();
+  } catch (error) {
+    console.error('Admin middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authorization error'
+    });
+  }
+};
+
 // Middleware to require specific role with proper validation
 export function requireRole(allowedRoles: string | string[]) {
   const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
@@ -325,6 +212,36 @@ export function requireRole(allowedRoles: string | string[]) {
   };
 }
 
+// Check if user owns resource or is admin
+export const requireOwnershipOrAdmin = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const targetUserId = parseInt(req.params.id);
+    const currentUser = req.session?.user;
+
+    if (!currentUser) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (currentUser.role === 'ADMIN' || currentUser.id === targetUserId) {
+      next();
+    } else {
+      res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+  } catch (error) {
+    console.error('Ownership middleware error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authorization error'
+    });
+  }
+};
+
 // Password hashing utilities
 export async function hashPassword(password: string): Promise<string> {
   const saltRounds = 12;
@@ -334,6 +251,11 @@ export async function hashPassword(password: string): Promise<string> {
 export async function comparePassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
+
+// Verify password utility
+export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  return bcrypt.compare(password, hash);
+};
 
 // Middleware to require verified user
 export function requireVerified(req: Request, res: Response, next: NextFunction) {

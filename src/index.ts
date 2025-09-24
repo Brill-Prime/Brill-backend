@@ -16,6 +16,10 @@ import merchantsRouter from './routes/merchants';
 import fuelOrdersRouter from './routes/fuel-orders';
 import ratingsRouter from './routes/ratings';
 import deliveryFeedbackRouter from './routes/delivery-feedback';
+import supportTicketsRouter from './routes/support-tickets';
+import auditLogsRouter from './routes/audit-logs';
+import trackingRouter from './routes/tracking';
+import fraudAlertsRouter from './routes/fraud-alerts';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -94,6 +98,18 @@ app.use('/api/fuel-orders', fuelOrdersRouter);
 
 // Delivery feedback management routes
 app.use('/api/delivery-feedback', deliveryFeedbackRouter);
+
+// Support tickets management routes
+app.use('/api/support-tickets', supportTicketsRouter);
+
+// Audit logs management routes  
+app.use('/api/audit-logs', auditLogsRouter);
+
+// Tracking management routes
+app.use('/api/tracking', trackingRouter);
+
+// Fraud alerts management routes
+app.use('/api/fraud-alerts', fraudAlertsRouter);
 
 // Basic route
 app.get('/', (req, res) => {

@@ -3,19 +3,27 @@ import nodemailer from 'nodemailer';
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_PASS;
 
-if (!GMAIL_USER || !GMAIL_PASS) {
-  throw new Error('GMAIL_USER and GMAIL_PASS must be set in environment variables');
+// Check environment variables - email service is optional for development
+const emailEnabled = GMAIL_USER && GMAIL_PASS;
+
+if (!emailEnabled) {
+  console.warn('⚠️ Email service disabled: GMAIL_USER and GMAIL_PASS not set');
 }
 
-const transporter = nodemailer.createTransport({
+const transporter = emailEnabled ? nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: GMAIL_USER,
     pass: GMAIL_PASS,
   },
-});
+}) : null;
 
 export async function sendOTPEmail(to: string, otp: string, name?: string): Promise<boolean> {
+  if (!emailEnabled || !transporter) {
+    console.warn('Email service not available - OTP email not sent');
+    return false;
+  }
+
   const mailOptions = {
     from: `BrillPrime <${GMAIL_USER}>`,
     to,
