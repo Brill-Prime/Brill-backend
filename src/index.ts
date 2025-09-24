@@ -123,6 +123,10 @@ app.use('/api/messages', messagesRouter);
 import notificationsRouter from './routes/notifications';
 app.use('/api/notifications', notificationsRouter);
 
+// Identity verifications management routes
+import identityVerificationsRouter from './routes/identity-verifications';
+app.use('/api/identity-verifications', identityVerificationsRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
