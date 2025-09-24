@@ -14,6 +14,7 @@ import transactionsRouter from './routes/transactions';
 import driversRouter from './routes/drivers';
 import merchantsRouter from './routes/merchants';
 import fuelOrdersRouter from './routes/fuel-orders';
+import ratingsRouter from './routes/ratings';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -89,6 +90,9 @@ app.use('/api/merchants', merchantsRouter);
 
 // Fuel orders management routes
 app.use('/api/fuel-orders', fuelOrdersRouter);
+
+// Ratings management routes
+app.use('/api/ratings', ratingsRouter);
 
 // Basic route
 app.get('/', (req, res) => {
