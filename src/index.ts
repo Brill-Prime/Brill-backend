@@ -139,6 +139,14 @@ app.use('/api/mfa-tokens', mfaTokensRouter);
 import verificationDocumentsRouter from './routes/verification-documents';
 app.use('/api/verification-documents', verificationDocumentsRouter);
 
+// Security logs management routes
+import securityLogsRouter from './routes/security-logs';
+app.use('/api/security-logs', securityLogsRouter);
+
+// Trusted devices management routes
+import trustedDevicesRouter from './routes/trusted-devices';
+app.use('/api/trusted-devices', trustedDevicesRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
