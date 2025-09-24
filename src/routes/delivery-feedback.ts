@@ -149,7 +149,7 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     
@@ -485,7 +485,7 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     

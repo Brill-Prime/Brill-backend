@@ -176,7 +176,7 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'MERCHANT']), async (req, re
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     
@@ -441,7 +441,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     

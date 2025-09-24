@@ -84,7 +84,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
 
@@ -250,10 +250,7 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
     // Update the category
     const [updatedCategory] = await db
       .update(categories)
-      .set({
-        ...validatedData,
-        updatedAt: new Date()
-      })
+      .set(validatedData)
       .where(eq(categories.id, categoryId))
       .returning();
 
@@ -274,7 +271,7 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
 

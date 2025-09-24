@@ -103,7 +103,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     res.status(500).json({
@@ -350,7 +350,7 @@ router.put('/:id', requireAuth, requireOwnershipOrAdmin, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Validation error',
-        errors: error.errors
+        errors: error.issues
       });
     }
     res.status(500).json({
