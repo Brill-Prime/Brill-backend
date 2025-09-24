@@ -119,6 +119,10 @@ app.use('/api/fraud-alerts', fraudAlertsRouter);
 // Messages management routes
 app.use('/api/messages', messagesRouter);
 
+// Notifications management routes
+import notificationsRouter from './routes/notifications';
+app.use('/api/notifications', notificationsRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
