@@ -147,6 +147,10 @@ app.use('/api/security-logs', securityLogsRouter);
 import trustedDevicesRouter from './routes/trusted-devices';
 app.use('/api/trusted-devices', trustedDevicesRouter);
 
+// Toll gates management routes
+import tollGatesRouter from './routes/toll-gates';
+app.use('/api/toll-gates', tollGatesRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
