@@ -8,6 +8,7 @@ import authRouter from './routes/auth';
 import userRouter from './routes/users';
 import categoriesRouter from './routes/categories';
 import productsRouter from './routes/products';
+import ordersRouter from './routes/orders';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -65,6 +66,9 @@ app.use('/api/categories', categoriesRouter);
 
 // Products management routes
 app.use('/api/products', productsRouter);
+
+// Orders management routes
+app.use('/api/orders', ordersRouter);
 
 // Basic route
 app.get('/', (req, res) => {
