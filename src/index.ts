@@ -7,6 +7,7 @@ import session from 'express-session';
 import authRouter from './routes/auth';
 import userRouter from './routes/users';
 import categoriesRouter from './routes/categories';
+import productsRouter from './routes/products';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -61,6 +62,9 @@ app.use('/api/users', userRouter);
 
 // Categories management routes
 app.use('/api/categories', categoriesRouter);
+
+// Products management routes
+app.use('/api/products', productsRouter);
 
 // Basic route
 app.get('/', (req, res) => {
