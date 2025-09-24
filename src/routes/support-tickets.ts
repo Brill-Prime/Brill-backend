@@ -493,4 +493,137 @@ router.post('/:id/resolve', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/support-tickets/:id/close - Close a ticket
+router.post('/:id/close', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const ticketId = parseInt(req.params.id);
+    const user = req.user!;
+
+    if (isNaN(ticketId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ticket ID'
+      });
+    }
+
+    // Check if ticket exists
+    const [existingTicket] = await db
+      .select()
+      .from(supportTickets)
+      .where(eq(supportTickets.id, ticketId))
+      .limit(1);
+
+    if (!existingTicket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Support ticket not found'
+      });
+    }
+
+    if (existingTicket.status === 'CLOSED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Ticket is already closed'
+      });
+    }
+
+    const [updatedTicket] = await db
+      .update(supportTickets)
+      .set({
+        status: 'CLOSED',
+        updatedAt: new Date()
+      })
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+
+    // Log audit activity
+    await logAuditActivity(
+      user.id,
+      'SUPPORT_TICKET_CLOSED',
+      'SUPPORT_TICKET',
+      ticketId,
+      { closedBy: user.fullName, previousStatus: existingTicket.status }
+    );
+
+    res.json({
+      success: true,
+      message: 'Support ticket closed successfully',
+      ticket: updatedTicket
+    });
+  } catch (error) {
+    console.error('Close support ticket error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to close support ticket'
+    });
+  }
+});
+
+// POST /api/support-tickets/:id/reopen - Reopen a closed ticket
+router.post('/:id/reopen', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const ticketId = parseInt(req.params.id);
+    const user = req.user!;
+
+    if (isNaN(ticketId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ticket ID'
+      });
+    }
+
+    // Check if ticket exists
+    const [existingTicket] = await db
+      .select()
+      .from(supportTickets)
+      .where(eq(supportTickets.id, ticketId))
+      .limit(1);
+
+    if (!existingTicket) {
+      return res.status(404).json({
+        success: false,
+        message: 'Support ticket not found'
+      });
+    }
+
+    if (!['CLOSED', 'RESOLVED'].includes(existingTicket.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only closed or resolved tickets can be reopened'
+      });
+    }
+
+    const [updatedTicket] = await db
+      .update(supportTickets)
+      .set({
+        status: 'OPEN',
+        resolvedAt: null,
+        updatedAt: new Date()
+      })
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+
+    // Log audit activity
+    await logAuditActivity(
+      user.id,
+      'SUPPORT_TICKET_REOPENED',
+      'SUPPORT_TICKET',
+      ticketId,
+      { reopenedBy: user.fullName, previousStatus: existingTicket.status }
+    );
+
+    res.json({
+      success: true,
+      message: 'Support ticket reopened successfully',
+      ticket: updatedTicket
+    });
+  } catch (error) {
+    console.error('Reopen support ticket error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reopen support ticket'
+    });
+  }
+});
+
 export default router;

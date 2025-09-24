@@ -102,6 +102,10 @@ app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 // Support tickets management routes
 app.use('/api/support-tickets', supportTicketsRouter);
 
+// Support ticket messages management routes
+const supportTicketMessagesRouter = require('./routes/support-ticket-messages').default;
+app.use('/api/support-tickets', supportTicketMessagesRouter);
+
 // Audit logs management routes  
 app.use('/api/audit-logs', auditLogsRouter);
 
