@@ -123,7 +123,7 @@ router.get('/', requireAuth, async (req, res) => {
     }
 
     if (status) {
-      conditions.push(eq(supportTickets.status, status as string));
+      conditions.push(eq(supportTickets.status, status as 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'));
     }
 
     if (category) {

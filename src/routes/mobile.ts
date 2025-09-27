@@ -3,8 +3,39 @@ import express from 'express';
 import { z } from 'zod';
 import { MobileFirebaseService } from '../services/mobileFirebase';
 import { requireAuth } from '../utils/auth';
+import mobileConfig from '../config/mobile';
 
 const router = express.Router();
+
+// Shared mobile configuration endpoint
+router.get('/config', async (req, res) => {
+  try {
+    const config = {
+      apiVersion: mobileConfig.common.apiVersion,
+      supportedVersions: mobileConfig.common.supportedVersions,
+      features: mobileConfig.common.features,
+      pushNotifications: mobileConfig.pushNotifications,
+      endpoints: {
+        base: process.env.API_BASE_URL || 'https://your-repl-name.replit.app',
+        auth: '/api/firebase/auth',
+        mobile: '/api/mobile',
+        ios: '/api/ios',
+        android: '/api/android'
+      }
+    };
+    
+    res.json({
+      success: true,
+      config
+    });
+  } catch (error: any) {
+    console.error('Mobile config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get mobile configuration'
+    });
+  }
+});
 
 // Validation schemas
 const deviceInfoSchema = z.object({

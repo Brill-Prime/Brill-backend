@@ -13,12 +13,20 @@ export const mobileConfig = {
   
   // Android Configuration
   android: {
-    packageName: process.env.ANDROID_PACKAGE_NAME || 'com.brillprime.mobile',
+    packageName: 'com.brillprime',
+    applicationId: '1:1064268711919:android:6e148568cf68476fa2581a',
+    apiKey: 'AIzaSyAqseqstCc-Tx807Hsr_6LXIJbInHY7xUo',
+    projectNumber: '1064268711919',
     sha256CertFingerprint: process.env.ANDROID_SHA256_CERT_FINGERPRINT,
     playStoreId: process.env.ANDROID_PLAY_STORE_ID,
     deepLinks: {
       scheme: 'brillprime',
-      host: 'app'
+      host: 'app',
+      intentFilters: [
+        'android.intent.action.VIEW',
+        'android.intent.category.DEFAULT',
+        'android.intent.category.BROWSABLE'
+      ]
     }
   },
   

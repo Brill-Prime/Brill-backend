@@ -25,6 +25,7 @@ import moderationResponsesRouter from './routes/moderation-responses';
 import firebaseRouter from './routes/firebase';
 import mobileRouter from './routes/mobile';
 import iosRoutes from './routes/ios';
+import androidRoutes from './routes/android';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -177,6 +178,9 @@ app.use('/api/mobile', mobileRouter);
 
 // iOS specific routes
 app.use('/api/ios', iosRoutes);
+
+// Android specific routes
+app.use('/api/android', androidRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
