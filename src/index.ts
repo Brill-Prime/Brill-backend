@@ -23,6 +23,7 @@ import fraudAlertsRouter from './routes/fraud-alerts';
 import messagesRouter from './routes/messages';
 import contentReportsRouter from './routes/content-reports';
 import moderationResponsesRouter from './routes/moderation-responses';
+import firebaseRouter from './routes/firebase';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -166,6 +167,9 @@ app.use('/api/content-reports', contentReportsRouter);
 
 // Moderation responses management routes
 app.use('/api/moderation-responses', moderationResponsesRouter);
+
+// Firebase routes
+app.use('/api/firebase', firebaseRouter);
 
 // Basic route
 app.get('/', (req, res) => {
