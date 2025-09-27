@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { transactions, users, orders, auditLogs } from '../db/schema';
@@ -50,9 +49,9 @@ function generateTransactionRef(): string {
 
 // Helper function to log audit events
 async function logAuditEvent(
-  userId: number, 
-  action: string, 
-  entityId: number, 
+  userId: number,
+  action: string,
+  entityId: number,
   details: any = {}
 ) {
   try {
@@ -138,9 +137,9 @@ router.post('/', requireAuth, async (req, res) => {
       currentUser.id,
       'TRANSACTION_CREATED',
       newTransaction[0].id,
-      { 
-        transactionRef, 
-        type: validatedData.type, 
+      {
+        transactionRef,
+        type: validatedData.type,
         amount: validatedData.amount,
         paymentMethod: validatedData.paymentMethod
       }
@@ -153,7 +152,7 @@ router.post('/', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Create transaction error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -161,7 +160,7 @@ router.post('/', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to create transaction'
@@ -180,7 +179,7 @@ router.get('/', requireAuth, async (req, res) => {
     const type = req.query.type as string;
     const startDate = req.query.startDate as string;
     const endDate = req.query.endDate as string;
-    
+
     const offset = (page - 1) * limit;
 
     // Build query conditions
@@ -395,8 +394,7 @@ router.put('/:id', requireAuth, requireRole(['ADMIN', 'MERCHANT']), async (req, 
     const updatedTransaction = await db
       .update(transactions)
       .set({
-        ...validatedData,
-        updatedAt: new Date()
+        ...validatedData
       })
       .where(eq(transactions.id, transactionId))
       .returning();
@@ -416,7 +414,7 @@ router.put('/:id', requireAuth, requireRole(['ADMIN', 'MERCHANT']), async (req, 
     });
   } catch (error) {
     console.error('Update transaction error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -424,7 +422,7 @@ router.put('/:id', requireAuth, requireRole(['ADMIN', 'MERCHANT']), async (req, 
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to update transaction'
@@ -484,8 +482,7 @@ router.post('/:id/confirm', requireAuth, requireRole(['ADMIN', 'MERCHANT']), asy
         status: 'COMPLETED',
         paystackTransactionId: paystackTransactionId || existingTransaction[0].paystackTransactionId,
         paymentGatewayRef: paymentGatewayRef || existingTransaction[0].paymentGatewayRef,
-        completedAt: new Date(),
-        updatedAt: new Date()
+        completedAt: new Date()
       })
       .where(eq(transactions.id, transactionId))
       .returning();
@@ -495,7 +492,7 @@ router.post('/:id/confirm', requireAuth, requireRole(['ADMIN', 'MERCHANT']), asy
       currentUser.id,
       'TRANSACTION_CONFIRMED',
       transactionId,
-      { 
+      {
         previousStatus: existingTransaction[0].status,
         paystackTransactionId,
         paymentGatewayRef
@@ -585,8 +582,7 @@ router.post('/:id/refund', requireAuth, requireRole(['ADMIN', 'MERCHANT']), asyn
             refundedBy: currentUser.id,
             refundedAt: new Date()
           }
-        },
-        updatedAt: new Date()
+        }
       })
       .where(eq(transactions.id, transactionId))
       .returning();
@@ -617,7 +613,7 @@ router.post('/:id/refund', requireAuth, requireRole(['ADMIN', 'MERCHANT']), asyn
       currentUser.id,
       'TRANSACTION_REFUNDED',
       transactionId,
-      { 
+      {
         reason: reason || 'Refund requested',
         refundAmount: refundAmountNum,
         originalAmount
