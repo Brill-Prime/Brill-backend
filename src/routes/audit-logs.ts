@@ -35,7 +35,7 @@ const createAuditLogSchema = z.object({
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const queryParams = auditLogsQuerySchema.parse(req.query);
-    
+
     const pageNum = parseInt(queryParams.page);
     const limitNum = parseInt(queryParams.limit);
     const offset = (pageNum - 1) * limitNum;
@@ -417,7 +417,7 @@ const userAuditLogsQuerySchema = z.object({
 router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const queryParams = auditLogsQuerySchema.parse(req.query);
-    
+
     const pageNum = parseInt(queryParams.page);
     const limitNum = Math.min(parseInt(queryParams.limit), 100); // Max 100 items per page
     const offset = (pageNum - 1) * limitNum;

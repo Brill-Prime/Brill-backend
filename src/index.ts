@@ -138,6 +138,14 @@ app.use('/api/error-logs', errorLogsRouter);
 import mfaTokensRouter from './routes/mfa-tokens';
 app.use('/api/mfa-tokens', mfaTokensRouter);
 
+// JWT tokens management routes
+import jwtTokensRouter from './routes/jwt-tokens';
+app.use('/api/jwt-tokens', jwtTokensRouter);
+
+// Password reset routes
+import passwordResetRouter from './routes/password-reset';
+app.use('/api/password-reset', passwordResetRouter);
+
 // Verification documents management routes
 import verificationDocumentsRouter from './routes/verification-documents';
 app.use('/api/verification-documents', verificationDocumentsRouter);

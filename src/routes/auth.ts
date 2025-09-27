@@ -64,6 +64,11 @@ router.post('/login', async (req, res) => {
       profilePicture: user.profilePicture ?? undefined
     };
 
+    // Generate JWT tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokenPayload = JWTService.createPayloadFromUser(user);
+    const tokens = JWTService.generateTokenPair(tokenPayload);
+
     res.json({
       success: true,
       user: {
@@ -72,7 +77,8 @@ router.post('/login', async (req, res) => {
         fullName: user.fullName,
         role: user.role,
         isVerified: user.isVerified || false
-      }
+      },
+      tokens
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -156,6 +162,11 @@ router.post('/register', async (req, res) => {
       profilePicture: newUser.profilePicture ?? undefined
     };
 
+    // Generate JWT tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokenPayload = JWTService.createPayloadFromUser(newUser);
+    const tokens = JWTService.generateTokenPair(tokenPayload);
+
     res.json({
       success: true,
       requiresEmailVerification: true,
@@ -165,7 +176,8 @@ router.post('/register', async (req, res) => {
         fullName: newUser.fullName,
         role: newUser.role,
         isVerified: false
-      }
+      },
+      tokens
     });
   } catch (error: any) {
     console.error('Registration error:', error);

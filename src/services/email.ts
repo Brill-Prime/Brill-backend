@@ -18,17 +18,26 @@ const transporter = emailEnabled ? nodemailer.createTransport({
   },
 }) : null;
 
-export async function sendOTPEmail(to: string, otp: string, name?: string): Promise<boolean> {
+export async function sendOTPEmail(
+  to: string, 
+  otp: string, 
+  name?: string, 
+  subject?: string, 
+  htmlContent?: string
+): Promise<boolean> {
   if (!emailEnabled || !transporter) {
     console.warn('Email service not available - OTP email not sent');
     return false;
   }
 
+  const defaultSubject = 'Your BrillPrime OTP Code';
+  const defaultHtml = `<p>Hello${name ? ' ' + name : ''},</p><p>Your OTP code is: <b>${otp}</b></p><p>This code will expire in 10 minutes.</p>`;
+
   const mailOptions = {
     from: `BrillPrime <${GMAIL_USER}>`,
     to,
-    subject: 'Your BrillPrime OTP Code',
-    html: `<p>Hello${name ? ' ' + name : ''},</p><p>Your OTP code is: <b>${otp}</b></p><p>This code will expire in 10 minutes.</p>`
+    subject: subject || defaultSubject,
+    html: htmlContent || defaultHtml
   };
 
   try {

@@ -82,6 +82,16 @@ export function verifyToken(token: string): Promise<any> {
   });
 }
 
+// Enhanced token verification using JWTService
+export async function verifyJWTToken(token: string): Promise<any> {
+  try {
+    const { JWTService } = await import('../services/jwt');
+    return await JWTService.verifyAccessToken(token);
+  } catch (error) {
+    throw error;
+  }
+}
+
 // Generate secure JWT token
 export function generateToken(payload: object, expiresIn: string = '1h'): string {
   return jwt.sign(payload, JWT_SECRET as string, {
