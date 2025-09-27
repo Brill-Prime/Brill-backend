@@ -394,7 +394,8 @@ router.put('/:id', requireAuth, requireRole(['ADMIN', 'MERCHANT']), async (req, 
     const updatedTransaction = await db
       .update(transactions)
       .set({
-        ...validatedData
+        ...validatedData,
+        // updatedAt: new Date() // Remove if not in schema
       })
       .where(eq(transactions.id, transactionId))
       .returning();
