@@ -26,6 +26,7 @@ import firebaseRouter from './routes/firebase';
 import mobileRouter from './routes/mobile';
 import iosRoutes from './routes/ios';
 import androidRoutes from './routes/android';
+import webRoutes from './routes/web';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -106,9 +107,6 @@ app.use('/api/fuel-orders', fuelOrdersRouter);
 app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 
 // Support tickets management routes
-app.use('/api/support-tickets', supportTicketsRouter);
-
-// Support ticket messages management routes
 const supportTicketMessagesRouter = require('./routes/support-ticket-messages').default;
 app.use('/api/support-tickets', supportTicketMessagesRouter);
 
@@ -181,6 +179,9 @@ app.use('/api/ios', iosRoutes);
 
 // Android specific routes
 app.use('/api/android', androidRoutes);
+
+// Web specific routes
+app.use('/api/web', webRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
