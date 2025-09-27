@@ -1,5 +1,4 @@
 import cors from 'cors';
-
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -25,6 +24,7 @@ import contentReportsRouter from './routes/content-reports';
 import moderationResponsesRouter from './routes/moderation-responses';
 import firebaseRouter from './routes/firebase';
 import mobileRouter from './routes/mobile';
+import iosRoutes from './routes/ios';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
@@ -174,6 +174,9 @@ app.use('/api/firebase', firebaseRouter);
 
 // Mobile routes for cross-platform support
 app.use('/api/mobile', mobileRouter);
+
+// iOS specific routes
+app.use('/api/ios', iosRoutes);
 
 // Basic route
 app.get('/', (req, res) => {

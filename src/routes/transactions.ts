@@ -576,7 +576,7 @@ router.post('/:id/refund', requireAuth, requireRole(['ADMIN', 'MERCHANT']), asyn
       .set({
         status: 'REFUNDED',
         metadata: {
-          ...existingTransaction[0].metadata,
+          ...(existingTransaction[0].metadata as Record<string, any> || {}),
           refund: {
             reason: reason || 'Refund requested',
             refundAmount: refundAmountNum,
