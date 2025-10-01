@@ -26,7 +26,7 @@ if (!emailEnabled) {
   console.warn('⚠️ Email service disabled: Email credentials not set');
 }
 
-const transporter = emailEnabled ? nodemailer.createTransporter(
+const transporter = emailEnabled ? nodemailer.createTransport(
   SMTP_HOST ? {
     host: SMTP_HOST,
     port: parseInt(SMTP_PORT || '587'),

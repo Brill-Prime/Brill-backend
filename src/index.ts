@@ -205,6 +205,14 @@ app.use('/api/realtime', realtimeRouter);
 import realtimeExamplesRouter from './routes/realtime-examples';
 app.use('/api/realtime-examples', realtimeExamplesRouter);
 
+// Driver verification routes
+import driverVerificationRouter from './routes/driver-verification';
+app.use('/api/driver-verification', driverVerificationRouter);
+
+// Delivery assignment routes
+import deliveryAssignmentsRouter from './routes/delivery-assignments';
+app.use('/api/delivery-assignments', deliveryAssignmentsRouter);
+
 // Wallet management routes
 import walletRouter from './routes/wallet';
 app.use('/api/wallet', walletRouter);

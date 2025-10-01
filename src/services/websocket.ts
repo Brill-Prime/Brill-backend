@@ -161,6 +161,18 @@ export class WebSocketService {
           await this.handleGetOrderStatus(ws, message.data);
           break;
 
+        case 'start_gps_tracking':
+          await this.handleStartGPSTracking(ws, message.data);
+          break;
+
+        case 'stop_gps_tracking':
+          await this.handleStopGPSTracking(ws, message.data);
+          break;
+
+        case 'geofence_event':
+          await this.handleGeofenceEvent(ws, message.data);
+          break;
+
         default:
           ws.send(JSON.stringify({
             type: 'error',
@@ -306,7 +318,7 @@ export class WebSocketService {
 
   private async handleLocationUpdate(ws: AuthenticatedWebSocket, data: any) {
     try {
-      const { orderId, latitude, longitude, status } = data;
+      const { orderId, latitude, longitude, status, heading, speed, accuracy } = data;
 
       // Verify driver is assigned to this order
       const [order] = await db
@@ -324,7 +336,17 @@ export class WebSocketService {
         return;
       }
 
-      // Insert tracking entry
+      // Update driver's current location in profile
+      await db
+        .update(driverProfiles)
+        .set({
+          currentLatitude: latitude.toString(),
+          currentLongitude: longitude.toString(),
+          lastUsedAt: new Date()
+        })
+        .where(eq(driverProfiles.userId, ws.userId!));
+
+      // Insert detailed tracking entry
       const [newTracking] = await db
         .insert(tracking)
         .values({
@@ -336,18 +358,57 @@ export class WebSocketService {
         })
         .returning();
 
-      // Broadcast location update to order participants
+      // Calculate ETA and distance to destination if available
+      let eta = null;
+      let distanceToDestination = null;
+      
+      if (order.deliveryLatitude && order.deliveryLongitude) {
+        const destLat = parseFloat(order.deliveryLatitude);
+        const destLng = parseFloat(order.deliveryLongitude);
+        
+        distanceToDestination = GeolocationService.haversineDistance(
+          { latitude, longitude },
+          { latitude: destLat, longitude: destLng }
+        );
+        
+        // Estimate ETA (assuming 30 km/h average speed)
+        const estimatedMinutes = (distanceToDestination / 30) * 60;
+        eta = new Date(Date.now() + estimatedMinutes * 60 * 1000);
+      }
+
+      // Enhanced location data
+      const locationData = {
+        orderId,
+        driverId: ws.userId,
+        latitude,
+        longitude,
+        status,
+        heading: heading || null,
+        speed: speed || null,
+        accuracy: accuracy || null,
+        timestamp: newTracking.createdAt,
+        eta,
+        distanceToDestination,
+        trackingId: newTracking.id
+      };
+
+      // Broadcast enhanced location update to order participants
       await this.broadcastOrderUpdate(orderId, {
         type: 'location_update',
-        data: {
-          orderId,
-          driverId: ws.userId,
-          latitude,
-          longitude,
-          status,
-          timestamp: newTracking.createdAt
-        }
+        data: locationData
       });
+
+      // Send confirmation to driver
+      ws.send(JSON.stringify({
+        type: 'location_updated',
+        data: {
+          success: true,
+          trackingId: newTracking.id,
+          eta,
+          distanceToDestination
+        },
+        timestamp: new Date().toISOString()
+      }));
 
     } catch (error) {
       console.error('Location update error:', error);
@@ -519,6 +580,151 @@ export class WebSocketService {
 
   public getUserConnectionCount(userId: number): number {
     return this.clients.get(userId)?.length || 0;
+  }
+
+  private async handleStartGPSTracking(ws: AuthenticatedWebSocket, data: { orderId: number }) {
+    try {
+      const { orderId } = data;
+
+      // Verify driver has access to this order
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+
+      if (!order || order.driverId !== ws.userId) {
+        ws.send(JSON.stringify({
+          type: 'error',
+          data: { message: 'Not authorized to track this order' },
+          timestamp: new Date().toISOString()
+        }));
+        return;
+      }
+
+      // Set up GPS tracking session
+      ws.send(JSON.stringify({
+        type: 'gps_tracking_started',
+        data: {
+          orderId,
+          trackingInterval: 5000, // 5 seconds
+          geofenceRadius: 100, // 100 meters
+          message: 'GPS tracking started'
+        },
+        timestamp: new Date().toISOString()
+      }));
+
+      // Log tracking start
+      await db.insert(auditLogs).values({
+        userId: ws.userId!,
+        action: 'GPS_TRACKING_STARTED',
+        entityType: 'ORDER',
+        entityId: orderId,
+        details: { driverId: ws.userId }
+      });
+
+    } catch (error) {
+      console.error('Start GPS tracking error:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        data: { message: 'Failed to start GPS tracking' },
+        timestamp: new Date().toISOString()
+      }));
+    }
+  }
+
+  private async handleStopGPSTracking(ws: AuthenticatedWebSocket, data: { orderId: number }) {
+    try {
+      const { orderId } = data;
+
+      ws.send(JSON.stringify({
+        type: 'gps_tracking_stopped',
+        data: {
+          orderId,
+          message: 'GPS tracking stopped'
+        },
+        timestamp: new Date().toISOString()
+      }));
+
+      // Log tracking stop
+      await db.insert(auditLogs).values({
+        userId: ws.userId!,
+        action: 'GPS_TRACKING_STOPPED',
+        entityType: 'ORDER',
+        entityId: orderId,
+        details: { driverId: ws.userId }
+      });
+
+    } catch (error) {
+      console.error('Stop GPS tracking error:', error);
+    }
+  }
+
+  private async handleGeofenceEvent(ws: AuthenticatedWebSocket, data: any) {
+    try {
+      const { orderId, eventType, location, radius } = data;
+
+      // Verify driver has access to this order
+      const [order] = await db
+        .select()
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .limit(1);
+
+      if (!order || order.driverId !== ws.userId) {
+        return;
+      }
+
+      // Process geofence events
+      let statusUpdate = null;
+      let notificationMessage = '';
+
+      switch (eventType) {
+        case 'ENTERED_PICKUP_ZONE':
+          statusUpdate = 'ARRIVED_AT_PICKUP';
+          notificationMessage = 'Driver arrived at pickup location';
+          break;
+        case 'LEFT_PICKUP_ZONE':
+          statusUpdate = 'LEFT_PICKUP';
+          notificationMessage = 'Driver left pickup location';
+          break;
+        case 'ENTERED_DELIVERY_ZONE':
+          statusUpdate = 'ARRIVED_AT_DELIVERY';
+          notificationMessage = 'Driver arrived at delivery location';
+          break;
+        case 'LEFT_DELIVERY_ZONE':
+          statusUpdate = 'LEFT_DELIVERY';
+          notificationMessage = 'Driver left delivery location';
+          break;
+      }
+
+      if (statusUpdate) {
+        // Insert tracking entry for geofence event
+        await db.insert(tracking).values({
+          orderId,
+          driverId: ws.userId!,
+          latitude: location.latitude.toString(),
+          longitude: location.longitude.toString(),
+          status: statusUpdate
+        });
+
+        // Broadcast geofence event to order participants
+        await this.broadcastOrderUpdate(orderId, {
+          type: 'geofence_event',
+          data: {
+            orderId,
+            eventType,
+            status: statusUpdate,
+            location,
+            message: notificationMessage,
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+    } catch (error) {
+      console.error('Geofence event error:', error);
+    }
   }
 }
 
