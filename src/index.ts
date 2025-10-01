@@ -191,6 +191,18 @@ app.use('/api/android', androidRoutes);
 // Web specific routes
 app.use('/api/web', webRoutes);
 
+// Wallet management routes
+import walletRouter from './routes/wallet';
+app.use('/api/wallet', walletRouter);
+
+// Search routes
+import searchRouter from './routes/search';
+app.use('/api/search', searchRouter);
+
+// File upload routes
+import uploadRouter from './routes/upload';
+app.use('/api/upload', uploadRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
