@@ -14,7 +14,7 @@ const sendNotificationSchema = z.object({
   title: z.string().min(1, 'Title is required'),
   message: z.string().min(1, 'Message is required'),
   type: z.enum(['INFO', 'WARNING', 'ERROR', 'SUCCESS']).default('INFO'),
-  data: z.record(z.any()).optional(),
+  data: z.record(z.string(), z.any()).optional(),
   broadcast: z.boolean().default(false)
 });
 
@@ -23,7 +23,7 @@ const bulkNotificationSchema = z.object({
   title: z.string().min(1),
   message: z.string().min(1),
   type: z.enum(['INFO', 'WARNING', 'ERROR', 'SUCCESS']).default('INFO'),
-  data: z.record(z.any()).optional()
+  data: z.record(z.string(), z.any()).optional()
 });
 
 // POST /api/push-notifications/send - Send push notification
@@ -42,16 +42,15 @@ router.post('/send', requireAuth, requireAdmin, async (req, res) => {
           isNull(users.deletedAt)
         ));
 
-      const notifications = activeUsers.map(user => ({
+      const notificationValues = activeUsers.map(user => ({
         userId: user.id,
         title: validatedData.title,
         message: validatedData.message,
         type: validatedData.type,
-        data: validatedData.data || {},
         isRead: false
       }));
 
-      await db.insert(notifications).values(notifications);
+      await db.insert(notifications).values(notificationValues);
 
       res.json({
         success: true,
@@ -66,7 +65,6 @@ router.post('/send', requireAuth, requireAdmin, async (req, res) => {
           title: validatedData.title,
           message: validatedData.message,
           type: validatedData.type,
-          data: validatedData.data || {},
           isRead: false
         })
         .returning();
