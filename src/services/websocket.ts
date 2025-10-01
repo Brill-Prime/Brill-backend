@@ -3,8 +3,9 @@ import WebSocket from 'ws';
 import { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/config';
-import { users, orders, tracking, messages } from '../db/schema';
+import { users, orders, tracking, messages, driverProfiles, auditLogs } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
+import GeolocationService from './geolocation';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: number;

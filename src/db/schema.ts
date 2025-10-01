@@ -485,6 +485,26 @@ export const errorLogs = pgTable("error_logs", {
   severityIdx: index("error_logs_severity_idx").on(table.severity)
 }));
 
+// ---------------- JWT Tokens ----------------
+export const jwtTokens = pgTable("jwt_tokens", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull(),
+  tokenType: text("token_type").notNull(), // 'ACCESS' or 'REFRESH'
+  sessionId: text("session_id").notNull(),
+  deviceInfo: jsonb("device_info").default('{}'),
+  expiresAt: timestamp("expires_at").notNull(),
+  isActive: boolean("is_active").default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  deletedAt: timestamp("deleted_at") // Soft delete
+}, (table) => ({
+  userIdIdx: index("jwt_tokens_user_id_idx").on(table.userId),
+  tokenIdx: index("jwt_tokens_token_idx").on(table.token),
+  sessionIdIdx: index("jwt_tokens_session_id_idx").on(table.sessionId)
+}));
+
 // ---------------- MFA Tokens ----------------
 export const mfaTokens = pgTable("mfa_tokens", {
   id: serial("id").primaryKey(),
@@ -779,6 +799,7 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   notifications: many(notifications),
   identityVerifications: many(identityVerifications),
   errorLogs: many(errorLogs),
+  jwtTokens: many(jwtTokens),
   mfaTokens: many(mfaTokens),
   verificationDocuments: many(verificationDocuments),
   securityLogs: many(securityLogs),
@@ -1042,6 +1063,13 @@ export const errorLogsRelations = relations(errorLogs, ({ one }) => ({
   })
 }));
 
+export const jwtTokensRelations = relations(jwtTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [jwtTokens.userId],
+    references: [users.id]
+  })
+}));
+
 export const mfaTokensRelations = relations(mfaTokens, ({ one }) => ({
   user: one(users, {
     fields: [mfaTokens.userId],
@@ -1258,6 +1286,8 @@ export type IdentityVerification = typeof identityVerifications.$inferSelect;
 export type NewIdentityVerification = typeof identityVerifications.$inferInsert;
 export type ErrorLog = typeof errorLogs.$inferSelect;
 export type NewErrorLog = typeof errorLogs.$inferInsert;
+export type JwtToken = typeof jwtTokens.$inferSelect;
+export type NewJwtToken = typeof jwtTokens.$inferInsert;
 export type MfaToken = typeof mfaTokens.$inferSelect;
 export type NewMfaToken = typeof mfaTokens.$inferInsert;
 export type VerificationDocument = typeof verificationDocuments.$inferSelect;
