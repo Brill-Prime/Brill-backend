@@ -125,7 +125,7 @@ router.post('/fcm-token', requireAuth, async (req, res) => {
 const intentSchema = z.object({
   action: z.string(),
   data: z.string().optional(),
-  extras: z.record(z.any()).optional()
+  extras: z.record(z.string(), z.any()).optional()
 });
 
 router.post('/intent', requireAuth, async (req, res) => {

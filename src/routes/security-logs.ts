@@ -2,7 +2,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { db } from '../db/config';
-import { securityLogs, users } from '../db/schema';
+import { securityLogs, users, auditLogs } from '../db/schema';
 import { eq, and, desc, gte, lte, ilike, or, sql } from 'drizzle-orm';
 import { requireAuth, requireAdmin } from '../utils/auth';
 

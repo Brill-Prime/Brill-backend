@@ -26,7 +26,7 @@ const createSuspiciousActivitySchema = z.object({
   activityType: z.string().min(1),
   description: z.string().min(1),
   riskLevel: z.enum(['LOW', 'MEDIUM', 'HIGH']).default('MEDIUM'),
-  riskIndicators: z.record(z.any()).default({}),
+  riskIndicators: z.record(z.string(), z.any()).default({}),
   ipAddress: z.string().optional(),
   deviceFingerprint: z.string().optional(),
   severity: z.enum(['LOW', 'MEDIUM', 'HIGH']).default('MEDIUM')

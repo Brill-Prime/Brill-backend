@@ -20,13 +20,13 @@ const createUserSchema = z.object({
 const createDocumentSchema = z.object({
   collection: z.string().min(1, 'Collection name is required'),
   docId: z.string().min(1, 'Document ID is required'),
-  data: z.record(z.any())
+  data: z.record(z.string(), z.any())
 });
 
 const updateDocumentSchema = z.object({
   collection: z.string().min(1, 'Collection name is required'),
   docId: z.string().min(1, 'Document ID is required'),
-  data: z.record(z.any())
+  data: z.record(z.string(), z.any())
 });
 
 // Authentication routes

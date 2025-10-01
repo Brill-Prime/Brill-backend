@@ -15,7 +15,7 @@ const createTollGateSchema = z.object({
   latitude: z.number().min(-90).max(90, 'Latitude must be between -90 and 90'),
   longitude: z.number().min(-180).max(180, 'Longitude must be between -180 and 180'),
   price: z.number().positive('Price must be positive'),
-  operatingHours: z.record(z.any()).optional().default({}),
+  operatingHours: z.record(z.string(), z.any()).optional().default({}),
   isActive: z.boolean().optional().default(true)
 });
 
@@ -25,7 +25,7 @@ const updateTollGateSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   price: z.number().positive().optional(),
-  operatingHours: z.record(z.any()).optional(),
+  operatingHours: z.record(z.string(), z.any()).optional(),
   isActive: z.boolean().optional()
 });
 

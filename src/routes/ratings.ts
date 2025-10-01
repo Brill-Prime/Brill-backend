@@ -2,7 +2,7 @@
 import express from 'express';
 import { db } from '../db/config';
 import { ratings, users, orders, products, auditLogs } from '../db/schema';
-import { eq, desc, and, isNull } from 'drizzle-orm';
+import { eq, desc, and, isNull, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth, requireRole, requireAdmin } from '../utils/auth';
 
