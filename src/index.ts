@@ -3,6 +3,8 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import session from 'express-session';
+import { createServer } from 'http';
+import { initializeWebSocket } from './services/websocket';
 import authRouter from './routes/auth';
 import userRouter from './routes/users';
 import categoriesRouter from './routes/categories';
@@ -27,11 +29,16 @@ import mobileRouter from './routes/mobile';
 import iosRoutes from './routes/ios';
 import androidRoutes from './routes/android';
 import webRoutes from './routes/web';
+import realtimeRouter from './routes/realtime';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 
 const app = express();
+const server = createServer(app);
 const PORT = parseInt(process.env.PORT || '5000', 10);
+
+// Initialize WebSocket service
+const wsService = initializeWebSocket(server);
 
 // Middleware
 // CORS middleware
@@ -191,6 +198,13 @@ app.use('/api/android', androidRoutes);
 // Web specific routes
 app.use('/api/web', webRoutes);
 
+// Real-time communication routes
+app.use('/api/realtime', realtimeRouter);
+
+// Real-time examples and integration guide
+import realtimeExamplesRouter from './routes/realtime-examples';
+app.use('/api/realtime-examples', realtimeExamplesRouter);
+
 // Wallet management routes
 import walletRouter from './routes/wallet';
 app.use('/api/wallet', walletRouter);
@@ -283,8 +297,9 @@ function formatUptime(uptimeSeconds: number): string {
 }
 
 // Start server
-app.listen(PORT, '0.0.0.0', async () => {
+server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 WebSocket server running on ws://0.0.0.0:${PORT}/ws`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
 
   // Test database connection
