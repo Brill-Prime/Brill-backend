@@ -38,6 +38,32 @@ outputType = "console"
 task = "shell.exec"
 args = "npm run dev"
 
+[[workflows.workflow]]
+name = "Setup"
+author = 48190948
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node setup.js"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm install"
+
+[[workflows.workflow]]
+name = "Production"
+author = 48190948
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run build"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm start"
+
 [[ports]]
 localPort = 5000
 externalPort = 80

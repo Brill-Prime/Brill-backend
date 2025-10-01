@@ -114,8 +114,11 @@ app.use('/api/fuel-orders', fuelOrdersRouter);
 app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 
 // Support tickets management routes
-const supportTicketMessagesRouter = require('./routes/support-ticket-messages').default;
-app.use('/api/support-tickets', supportTicketMessagesRouter);
+app.use('/api/support-tickets', supportTicketsRouter);
+
+// Support ticket messages management routes
+import supportTicketMessagesRouter from './routes/support-ticket-messages';
+app.use('/api/support-ticket-messages', supportTicketMessagesRouter);
 
 // Audit logs management routes  
 app.use('/api/audit-logs', auditLogsRouter);
@@ -227,7 +230,7 @@ app.use('/api/health', healthRouter);
 
 // Apply rate limiting to auth routes
 import RateLimitingService from './services/rateLimiting';
-app.use('/api/auth', RateLimitingService.authLimit);
+app.use('/auth', RateLimitingService.authLimit);
 app.use('/api', RateLimitingService.apiLimit);
 
 // Driver verification routes

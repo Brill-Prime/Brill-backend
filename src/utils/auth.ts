@@ -14,6 +14,150 @@ if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-developmen
 // Session timeout (30 minutes)
 const SESSION_TIMEOUT = 30 * 60 * 1000;
 
+export interface AuthRequest extends Request {
+  user?: {
+    id: number;
+    userId: string;
+    email: string;
+    fullName: string;
+    role: string;
+    isVerified: boolean;
+    profilePicture?: string;
+  };
+}
+
+// Generate JWT token
+export const generateToken = (user: any) => {
+  const payload = {
+    id: user.id,
+    userId: user.userId,
+    email: user.email,
+    role: user.role
+  };
+  
+  return jwt.sign(payload, JWT_SECRET, { 
+    expiresIn: '24h',
+    issuer: 'brill-backend',
+    audience: 'brill-app'
+  });
+};
+
+// Verify JWT token
+export const verifyToken = (token: string) => {
+  try {
+    return jwt.verify(token, JWT_SECRET) as any;
+  } catch (error) {
+    return null;
+  }
+};
+
+// Hash password
+export const hashPassword = async (password: string): Promise<string> => {
+  const saltRounds = 12;
+  return await bcrypt.hash(password, saltRounds);
+};
+
+// Compare password
+export const comparePassword = async (password: string, hashedPassword: string): Promise<boolean> => {
+  return await bcrypt.compare(password, hashedPassword);
+};
+
+// Middleware to require authentication
+export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access token required'
+      });
+    }
+
+    const decoded = verifyToken(token);
+    if (!decoded) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+
+    // Get user from database
+    const user = await db.select().from(users).where(eq(users.id, decoded.id)).limit(1);
+    
+    if (!user.length) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    req.user = user[0];
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Authentication error'
+    });
+  }
+};
+
+// Middleware to require admin role
+export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Admin access required'
+    });
+  }
+
+  next();
+};
+
+// Middleware to require driver role
+export const requireDriver = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Authentication required'
+    });
+  }
+
+  if (req.user.role !== 'driver' && req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Driver access required'
+    });
+  }
+
+  next();
+};
+
+// Session management
+export const updateLastActivity = (req: Request) => {
+  if (req.session) {
+    req.session.lastActivity = Date.now();
+  }
+};
+
+export const isSessionExpired = (req: Request): boolean => {
+  if (!req.session?.lastActivity) {
+    return true;
+  }
+  
+  return Date.now() - req.session.lastActivity > SESSION_TIMEOUT;
+};
+const SESSION_TIMEOUT = 30 * 60 * 1000;
+
 // Authentication middleware that adds Passport.js-like methods to req
 export function setupAuth() {
   return (req: Request, res: Response, next: NextFunction) => {
