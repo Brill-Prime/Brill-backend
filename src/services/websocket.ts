@@ -343,7 +343,7 @@ export class WebSocketService {
         .set({
           currentLatitude: latitude.toString(),
           currentLongitude: longitude.toString(),
-          lastUsedAt: new Date()
+          updatedAt: new Date()
         })
         .where(eq(driverProfiles.userId, ws.userId!));
 

@@ -205,6 +205,31 @@ app.use('/api/realtime', realtimeRouter);
 import realtimeExamplesRouter from './routes/realtime-examples';
 app.use('/api/realtime-examples', realtimeExamplesRouter);
 
+// Push notifications routes
+import pushNotificationsRouter from './routes/push-notifications';
+app.use('/api/push-notifications', pushNotificationsRouter);
+
+// Analytics routes
+import analyticsRouter from './routes/analytics';
+app.use('/api/analytics', analyticsRouter);
+
+// Admin dashboard routes
+import adminDashboardRouter from './routes/admin-dashboard';
+app.use('/api/admin-dashboard', adminDashboardRouter);
+
+// Configuration routes
+import configRouter from './routes/config';
+app.use('/api/config', configRouter);
+
+// Health check routes
+import healthRouter from './routes/health';
+app.use('/api/health', healthRouter);
+
+// Apply rate limiting to auth routes
+import RateLimitingService from './services/rateLimiting';
+app.use('/api/auth', RateLimitingService.authLimit);
+app.use('/api', RateLimitingService.apiLimit);
+
 // Driver verification routes
 import driverVerificationRouter from './routes/driver-verification';
 app.use('/api/driver-verification', driverVerificationRouter);
