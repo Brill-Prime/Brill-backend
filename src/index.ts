@@ -203,6 +203,14 @@ app.use('/api/search', searchRouter);
 import uploadRouter from './routes/upload';
 app.use('/api/upload', uploadRouter);
 
+// Geolocation routes
+import geolocationRouter from './routes/geolocation';
+app.use('/api/geolocation', geolocationRouter);
+
+// Webhook routes
+import webhookRouter from './routes/webhooks';
+app.use('/api/webhooks', webhookRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
