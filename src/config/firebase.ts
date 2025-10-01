@@ -25,7 +25,7 @@ export const storage = getStorage(app);
 
 // Initialize messaging for mobile push notifications (web only)
 let messaging: any = null;
-if (typeof window !== 'undefined') {
+if (typeof globalThis !== 'undefined' && typeof (globalThis as any).window !== 'undefined') {
   isSupported().then(supported => {
     if (supported) {
       messaging = getMessaging(app);

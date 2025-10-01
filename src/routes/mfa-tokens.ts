@@ -292,7 +292,7 @@ router.delete('/cleanup', requireAuth, async (req, res) => {
       .where(
         and(
           eq(mfaTokens.userId, userId),
-          gte(new Date(), mfaTokens.expiresAt)
+          gte(mfaTokens.expiresAt, new Date())
         )
       )
       .returning({ id: mfaTokens.id });

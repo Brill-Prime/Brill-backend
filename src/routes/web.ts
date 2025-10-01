@@ -74,8 +74,12 @@ router.post('/session/init', async (req, res) => {
     // For now, we'll trust the client-side authentication
     req.session.user = {
       id: req.body.userId,
+      userId: req.body.userId,
       email: req.body.email,
-      authenticated: true
+      fullName: req.body.fullName || '',
+      role: req.body.role || 'USER',
+      isVerified: req.body.isVerified || false,
+      profilePicture: req.body.profilePicture
     };
 
     res.json({

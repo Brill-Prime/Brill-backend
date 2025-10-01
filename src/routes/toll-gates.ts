@@ -64,8 +64,13 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     const newTollGate = await db
       .insert(tollGates)
       .values({
-        ...validatedData,
-        createdAt: new Date()
+        name: validatedData.name,
+        location: validatedData.location,
+        latitude: validatedData.latitude.toString(),
+        longitude: validatedData.longitude.toString(),
+        price: validatedData.price.toString(),
+        operatingHours: validatedData.operatingHours,
+        isActive: validatedData.isActive
       })
       .returning();
 
@@ -285,10 +290,19 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
       }
     }
 
-    // Update toll gate
+    // Update toll gate - convert numbers to strings for decimal fields
+    const updateData: any = {};
+    if (validatedData.name) updateData.name = validatedData.name;
+    if (validatedData.location) updateData.location = validatedData.location;
+    if (validatedData.latitude) updateData.latitude = validatedData.latitude.toString();
+    if (validatedData.longitude) updateData.longitude = validatedData.longitude.toString();
+    if (validatedData.price) updateData.price = validatedData.price.toString();
+    if (validatedData.operatingHours) updateData.operatingHours = validatedData.operatingHours;
+    if (validatedData.isActive !== undefined) updateData.isActive = validatedData.isActive;
+
     const updatedTollGate = await db
       .update(tollGates)
-      .set(validatedData)
+      .set(updateData)
       .where(eq(tollGates.id, tollGateId))
       .returning();
 
