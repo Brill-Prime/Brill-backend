@@ -92,18 +92,29 @@ export const products = pgTable("products", {
   positivePrice: check("positive_price", sql`${table.price} > 0`)
 }));
 
+// ---------------- Cart Items ----------------
+export const cartItems = pgTable("cart_items", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at")
+});
+
 // ---------------- Orders ----------------
 export const orders = pgTable("orders", {
   id: serial("id").primaryKey(),
-  orderNumber: text("order_number").unique().notNull(),
+  orderNumber: text("order_number").notNull().unique(),
   customerId: integer("customer_id").references(() => users.id).notNull(),
-  merchantId: integer("merchant_id").references(() => users.id), // Nullable until merchant assigned
-  driverId: integer("driver_id").references(() => users.id), // Nullable until driver assigned
+  merchantId: integer("merchant_id").references(() => users.id),
+  driverId: integer("driver_id").references(() => users.id),
   orderType: text("order_type").notNull(),
   status: orderStatusEnum("status").default('PENDING'),
-  totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
-  driverEarnings: decimal("driver_earnings", { precision: 15, scale: 2 }), // Nullable until driver assigned
-  deliveryAddress: text("delivery_address"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  driverEarnings: decimal("driver_earnings", { precision: 10, scale: 2 }),
+  deliveryAddress: text("delivery_address").notNull(),
   pickupAddress: text("pickup_address"),
   deliveryLatitude: decimal("delivery_latitude", { precision: 10, scale: 8 }),
   deliveryLongitude: decimal("delivery_longitude", { precision: 11, scale: 8 }),
@@ -111,7 +122,7 @@ export const orders = pgTable("orders", {
   acceptedAt: timestamp("accepted_at"),
   pickedUpAt: timestamp("picked_up_at"),
   deliveredAt: timestamp("delivered_at"),
-  confirmationDeadline: timestamp("confirmation_deadline"), // For auto-release after 48h
+  confirmationDeadline: timestamp("confirmation_deadline"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at") // Soft delete
@@ -122,6 +133,18 @@ export const orders = pgTable("orders", {
   orderNumberIdx: index("orders_order_number_idx").on(table.orderNumber),
   positiveTotalAmount: check("positive_total_amount", sql`${table.totalAmount} > 0`)
 }));
+
+// ---------------- Order Items ----------------
+export const orderItems = pgTable("order_items", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").references(() => orders.id).notNull(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  quantity: integer("quantity").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
 
 // ---------------- Escrows ----------------
 export const escrows = pgTable("escrows", {
@@ -834,6 +857,17 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   ratings: many(ratings)
 }));
 
+export const cartItemsRelations = relations(cartItems, ({ one }) => ({
+  user: one(users, {
+    fields: [cartItems.userId],
+    references: [users.id]
+  }),
+  product: one(products, {
+    fields: [cartItems.productId],
+    references: [products.id]
+  })
+}));
+
 export const ordersRelations = relations(orders, ({ one, many }) => ({
   customer: one(users, {
     fields: [orders.customerId],
@@ -850,6 +884,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
     references: [users.id],
     relationName: "driver"
   }),
+  orderItems: many(orderItems),
   escrows: many(escrows),
   transactions: many(transactions),
   ratings: many(ratings),
@@ -860,6 +895,17 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
   deliveryConfirmation: one(deliveryConfirmations, {
     fields: [orders.id],
     references: [deliveryConfirmations.orderId]
+  })
+}));
+
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id]
+  }),
+  product: one(products, {
+    fields: [orderItems.productId],
+    references: [products.id]
   })
 }));
 
@@ -1258,12 +1304,30 @@ export const insertTransactionSchema = z.object({
   description: z.string().optional()
 });
 
+export const insertCartItemSchema = z.object({
+  userId: z.number(),
+  productId: z.number(),
+  quantity: z.number().positive().default(1)
+});
+
+export const insertOrderItemSchema = z.object({
+  orderId: z.number(),
+  productId: z.number(),
+  quantity: z.number().positive(),
+  price: z.number().positive(),
+  subtotal: z.number().positive()
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
+export type CartItem = typeof cartItems.$inferSelect;
+export type NewCartItem = typeof cartItems.$inferInsert;
 export type Order = typeof orders.$inferSelect;
 export type NewOrder = typeof orders.$inferInsert;
+export type OrderItem = typeof orderItems.$inferSelect;
+export type NewOrderItem = typeof orderItems.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type NewTransaction = typeof transactions.$inferInsert;
 export type DriverProfile = typeof driverProfiles.$inferSelect;

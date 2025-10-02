@@ -32,6 +32,8 @@ import webRoutes from './routes/web';
 import realtimeRouter from './routes/realtime';
 import { testConnection, db } from './db/config';
 import { users } from './db/schema';
+import cartRoutes from './routes/cart';
+import checkoutRoutes from './routes/checkout';
 
 const app = express();
 const server = createServer(app);
@@ -264,6 +266,12 @@ app.use('/api/webhooks', webhookRouter);
 // Payment routes
 import paymentsRouter from './routes/payments';
 app.use('/api/payments', paymentsRouter);
+
+// Cart routes
+app.use('/api/cart', cartRoutes);
+
+// Checkout routes
+app.use('/api/checkout', checkoutRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
