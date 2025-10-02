@@ -34,6 +34,10 @@ import { testConnection, db } from './db/config';
 import { users } from './db/schema';
 import cartRoutes from './routes/cart';
 import checkoutRoutes from './routes/checkout';
+import mobileHealthRoutes from './routes/mobile-health';
+import driverLocationRoutes from './routes/driver-location';
+import qrProcessingRoutes from './routes/qr-processing';
+import autoAssignmentRoutes from './routes/auto-assignment';
 
 const app = express();
 const server = createServer(app);
@@ -122,7 +126,7 @@ app.use('/api/support-tickets', supportTicketsRouter);
 import supportTicketMessagesRouter from './routes/support-ticket-messages';
 app.use('/api/support-ticket-messages', supportTicketMessagesRouter);
 
-// Audit logs management routes  
+// Audit logs management routes
 app.use('/api/audit-logs', auditLogsRouter);
 
 // Tracking management routes
@@ -334,6 +338,12 @@ app.get('/test-db', async (req, res) => {
     });
   }
 });
+
+// Register new mobile routes with app
+app.use('/api', mobileHealthRoutes);
+app.use('/api/driver/location', driverLocationRoutes);
+app.use('/api/qr', qrProcessingRoutes);
+app.use('/api/assignment', autoAssignmentRoutes);
 
 // Helper function to format uptime
 function formatUptime(uptimeSeconds: number): string {
