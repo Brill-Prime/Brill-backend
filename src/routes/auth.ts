@@ -489,8 +489,8 @@ router.post('/resend-verification', async (req, res) => {
   }
 });
 
-// Social registration (Google, Facebook, Apple, etc.)
-const socialRegisterSchema = z.object({
+// Social login/registration (Google, Facebook, Apple, etc.)
+const socialAuthSchema = z.object({
   provider: z.enum(['GOOGLE', 'FACEBOOK', 'APPLE']),
   providerUserId: z.string(),
   email: z.string().email(),
@@ -498,6 +498,94 @@ const socialRegisterSchema = z.object({
   profilePicture: z.string().url().optional(),
   phone: z.string().optional(),
   role: z.enum(['CONSUMER', 'DRIVER', 'MERCHANT', 'ADMIN']).default('CONSUMER')
+});
+
+// Social login endpoint
+router.post('/login/social', async (req, res) => {
+  try {
+    const socialData = socialAuthSchema.parse(req.body);
+
+    // Check if user exists with this email
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, socialData.email))
+      .limit(1);
+
+    let user;
+
+    if (existingUser) {
+      // User exists - treat as login
+      user = existingUser;
+
+      // Update profile picture if provided and not set
+      if (socialData.profilePicture && !user.profilePicture) {
+        await db
+          .update(users)
+          .set({
+            profilePicture: socialData.profilePicture,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, user.id));
+
+        user.profilePicture = socialData.profilePicture;
+      }
+    } else {
+      // Create new user - social accounts are auto-verified
+      const newUsers = await db
+        .insert(users)
+        .values({
+          email: socialData.email,
+          fullName: socialData.fullName,
+          phone: socialData.phone,
+          role: socialData.role,
+          profilePicture: socialData.profilePicture,
+          isVerified: true, // Social accounts are pre-verified
+          password: null, // No password for social accounts
+          createdAt: new Date()
+        })
+        .returning();
+
+      user = newUsers[0];
+    }
+
+    // Create session
+    (req.session as any).userId = user.id;
+    (req.session as any).user = {
+      id: user.id,
+      userId: user.id.toString(),
+      email: user.email,
+      fullName: user.fullName ?? '',
+      role: user.role ?? '',
+      isVerified: user.isVerified || false,
+      profilePicture: user.profilePicture ?? undefined
+    };
+
+    // Generate JWT tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokenPayload = JWTService.createPayloadFromUser(user);
+    const tokens = JWTService.generateTokenPair(tokenPayload);
+
+    res.json({
+      success: true,
+      isNewUser: !existingUser,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: user.isVerified || false,
+        profilePicture: user.profilePicture
+      },
+      tokens
+    });
+  } catch (error: any) {
+    console.error('Social login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Social login failed'
+    });
+  }
 });
 
 router.post('/register/social', async (req, res) => {
@@ -583,6 +671,178 @@ router.post('/register/social', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Social registration failed'
+    });
+  }
+});
+
+// Token refresh endpoint
+router.post('/token/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = z.object({
+      refreshToken: z.string().min(1, 'Refresh token is required')
+    }).parse(req.body);
+
+    const { JWTService } = await import('../services/jwt');
+    const tokenPair = await JWTService.refreshAccessToken(refreshToken);
+
+    res.json({
+      success: true,
+      message: 'Tokens refreshed successfully',
+      tokens: tokenPair
+    });
+  } catch (error: any) {
+    console.error('Token refresh error:', error);
+    
+    let statusCode = 401;
+    let message = 'Failed to refresh token';
+
+    if (error.message === 'REFRESH_TOKEN_EXPIRED') {
+      message = 'Refresh token has expired. Please login again.';
+    } else if (error.message === 'INVALID_REFRESH_TOKEN') {
+      message = 'Invalid refresh token.';
+    } else if (error.message === 'USER_NOT_FOUND_OR_INACTIVE') {
+      message = 'User account not found or inactive.';
+      statusCode = 403;
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      message,
+      code: error.message
+    });
+  }
+});
+
+// Logout endpoint
+router.post('/logout', async (req, res) => {
+  try {
+    // Destroy session if exists
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Session destruction error:', err);
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Logout failed'
+    });
+  }
+});
+
+// Change password endpoint
+router.post('/change-password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = z.object({
+      currentPassword: z.string().min(6),
+      newPassword: z.string().min(6)
+    }).parse(req.body);
+
+    // Get user from session or JWT
+    let userId: number | undefined;
+    
+    if (req.session?.userId) {
+      userId = req.session.userId;
+    } else {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const { JWTService } = await import('../services/jwt');
+        try {
+          const decoded = await JWTService.verifyAccessToken(token);
+          userId = decoded.userId;
+        } catch (error) {
+          return res.status(401).json({
+            success: false,
+            message: 'Authentication required'
+          });
+        }
+      }
+    }
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    // Get user
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user has a password (social login users don't)
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot change password for social login accounts'
+      });
+    }
+
+    // Verify current password
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Check if new password is different from current
+    const samePassword = await bcrypt.compare(newPassword, user.password);
+    if (samePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password'
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await db
+      .update(users)
+      .set({
+        password: hashedPassword,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error: any) {
+    console.error('Change password error:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request data',
+        errors: error.issues
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password'
     });
   }
 });
