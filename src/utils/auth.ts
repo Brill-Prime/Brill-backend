@@ -27,12 +27,13 @@ export interface AuthRequest extends Request {
 }
 
 // Generate JWT token
-export const generateToken = (payload: any, expiresIn: string = '24h'): string => {
-  return jwt.sign(payload, JWT_SECRET, {
+export const generateToken = (payload: any, expiresIn: string | number = '24h'): string => {
+  const options: any = {
     expiresIn,
     issuer: 'brillprime-api',
     audience: 'brillprime-app'
-  });
+  };
+  return jwt.sign(payload, JWT_SECRET, options);
 };
 
 // Verify JWT token

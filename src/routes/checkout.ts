@@ -2,7 +2,7 @@
 import express from 'express';
 import { db } from '../db/config';
 import { cartItems, products, orders, orderItems, transactions, users } from '../db/schema';
-import { eq, and, isNull, inArray } from 'drizzle-orm';
+import { eq, and, isNull, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../utils/auth';
 
@@ -237,7 +237,7 @@ router.post('/', requireAuth, async (req, res) => {
     // Create orders (one per merchant)
     const createdOrders = [];
     
-    for (const [merchantId, items] of Object.entries(merchantGroups) as [string, any[]]) {
+    for (const [merchantId, items] of Object.entries(merchantGroups) as Array<[string, any[]]>) {
       const merchantSubtotal = items.reduce((sum, item) => 
         sum + (Number(item.product.price) * item.quantity), 0
       );
@@ -303,7 +303,7 @@ router.post('/', requireAuth, async (req, res) => {
       await db
         .update(users)
         .set({
-          walletBalance: db.raw(`wallet_balance - ${totalAmount}`),
+          walletBalance: sql`wallet_balance - ${totalAmount}`,
           updatedAt: new Date()
         })
         .where(eq(users.id, currentUser.id));

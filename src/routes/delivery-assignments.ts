@@ -116,7 +116,7 @@ router.post('/find-drivers', requireAuth, requireRole(['MERCHANT', 'ADMIN']), as
         // Calculate driver score
         const rating = parseFloat(driverData.user.averageRating || '0');
         const completedDeliveries = driver.totalDeliveries || 0;
-        const score = this.calculateDriverScore(rating, completedDeliveries, distance, travelTime);
+        const score = calculateDriverScore(rating, completedDeliveries, distance, travelTime);
 
         driversWithMetrics.push({
           driverId: driver.userId,

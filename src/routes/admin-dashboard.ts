@@ -149,13 +149,13 @@ router.get('/alerts', requireAuth, requireAdmin, async (req, res) => {
   try {
     const alerts = [];
 
-    // Check for failed orders in last 24 hours
+    // Check for cancelled orders in last 24 hours
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const [failedOrders] = await db
       .select({ count: count() })
       .from(orders)
       .where(and(
-        eq(orders.status, 'FAILED'),
+        eq(orders.status, 'CANCELLED'),
         gte(orders.createdAt, yesterday)
       ));
 
@@ -177,7 +177,13 @@ router.get('/alerts', requireAuth, requireAdmin, async (req, res) => {
         isNull(driverProfiles.deletedAt)
       ));
 
-    if (Number(offlineDrivers.count) > Number(totalDrivers) * 0.8) {
+    // Get total driver count
+    const [totalDriversData] = await db
+      .select({ count: count() })
+      .from(driverProfiles)
+      .where(isNull(driverProfiles.deletedAt));
+
+    if (Number(offlineDrivers.count) > Number(totalDriversData.count) * 0.8) {
       alerts.push({
         type: 'WARNING',
         title: 'Most Drivers Offline',

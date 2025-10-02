@@ -37,6 +37,7 @@ export const users = pgTable("users", {
   accountLockedUntil: timestamp("account_locked_until"),
   averageRating: numeric("average_rating", { precision: 3, scale: 2 }).default('0.00'),
   totalRatings: integer("total_ratings").default(0),
+  walletBalance: decimal("wallet_balance", { precision: 15, scale: 2 }).default('0.00'),
   // External payout fields for merchants/drivers (via Paystack recipients)
   paystackRecipientCode: text("paystack_recipient_code").unique(), // Unique for Paystack integration
   bankName: text("bank_name"),

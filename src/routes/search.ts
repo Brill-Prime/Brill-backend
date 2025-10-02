@@ -2,7 +2,7 @@
 import express from 'express';
 import { db } from '../db/config';
 import { products, users, merchantProfiles, categories } from '../db/schema';
-import { eq, and, or, ilike, isNull, desc } from 'drizzle-orm';
+import { eq, and, or, ilike, isNull, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth } from '../utils/auth';
 
