@@ -984,4 +984,342 @@ router.post('/:id/deliver', requireAuth, requireRole(['DRIVER', 'ADMIN']), async
   }
 });
 
+// POST /api/orders/:id/assign-driver - Assign a driver to an order
+router.post('/:id/assign-driver', requireAuth, requireRole(['MERCHANT', 'ADMIN']), async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { driverId } = req.body;
+    
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    if (!driverId || isNaN(parseInt(driverId))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid driver ID is required'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (merchant must own the order or be admin)
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== order.merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the merchant or admin can assign drivers'
+      });
+    }
+
+    // Verify driver exists and is available
+    const driver = await db
+      .select()
+      .from(users)
+      .where(and(
+        eq(users.id, parseInt(driverId)),
+        eq(users.role, 'DRIVER'),
+        isNull(users.deletedAt)
+      ))
+      .limit(1);
+
+    if (!driver.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Driver not found'
+      });
+    }
+
+    // Update order with driver assignment
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        driverId: parseInt(driverId),
+        status: 'ACCEPTED',
+        acceptedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'DRIVER_ASSIGNED',
+      orderId,
+      { orderNumber: order.orderNumber, driverId: parseInt(driverId) }
+    );
+
+    res.json({
+      success: true,
+      message: 'Driver assigned successfully',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Assign driver error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign driver'
+    });
+  }
+});
+
+// POST /api/orders/:id/mark-ready - Mark order as ready for pickup
+router.post('/:id/mark-ready', requireAuth, requireRole(['MERCHANT', 'ADMIN']), async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (merchant must own the order or be admin)
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== order.merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the merchant or admin can mark order as ready'
+      });
+    }
+
+    // Check if order is in the right status
+    if (order.status !== 'CONFIRMED' && order.status !== 'ACCEPTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order must be confirmed or accepted to mark as ready'
+      });
+    }
+
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        status: 'IN_TRANSIT',
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'ORDER_READY_FOR_PICKUP',
+      orderId,
+      { orderNumber: order.orderNumber }
+    );
+
+    res.json({
+      success: true,
+      message: 'Order marked as ready for pickup',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Mark ready error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark order as ready'
+    });
+  }
+});
+
+// POST /api/orders/:id/confirm-delivery - Customer confirms delivery receipt
+router.post('/:id/confirm-delivery', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (only customer can confirm delivery)
+    if (currentUser.id !== order.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the customer can confirm delivery'
+      });
+    }
+
+    // Check if order is delivered
+    if (order.status !== 'DELIVERED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order must be delivered before confirmation'
+      });
+    }
+
+    // Update order with confirmation deadline (48 hours from now for auto-release)
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        confirmationDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'DELIVERY_CONFIRMED_BY_CUSTOMER',
+      orderId,
+      { orderNumber: order.orderNumber }
+    );
+
+    res.json({
+      success: true,
+      message: 'Delivery confirmed successfully. Funds will be released within 48 hours.',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Confirm delivery error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm delivery'
+    });
+  }
+});
+
+// POST /api/orders/:id/complete - Mark order as complete (final state)
+router.post('/:id/complete', requireAuth, requireRole(['DRIVER', 'ADMIN']), async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (only assigned driver or admin)
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== order.driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the assigned driver or admin can complete the order'
+      });
+    }
+
+    // Check if order is delivered
+    if (order.status !== 'DELIVERED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order must be delivered before completion'
+      });
+    }
+
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        confirmationDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000),
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'ORDER_COMPLETED',
+      orderId,
+      { orderNumber: order.orderNumber }
+    );
+
+    res.json({
+      success: true,
+      message: 'Order completed successfully. Awaiting customer confirmation.',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Complete order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to complete order'
+    });
+  }
+});
+
 export default router;
