@@ -41,7 +41,11 @@ export const mobileConfig = {
       offlineSupport: true,
       pushNotifications: true,
       biometricAuth: true,
-      locationServices: true
+      locationServices: true,
+      qrScanner: true,
+      fuelOrdering: true,
+      tollPayments: true,
+      realTimeTracking: true
     }
   },
   
@@ -54,6 +58,21 @@ export const mobileConfig = {
       normal: ['order_placed', 'promotion'],
       low: ['system_maintenance']
     }
+  },
+
+  // API Configuration
+  api: {
+    baseUrl: process.env.NODE_ENV === 'production' 
+      ? 'https://brillprime-monorepo.replit.app/api' 
+      : 'http://0.0.0.0:5000/api',
+    websocketUrl: process.env.NODE_ENV === 'production'
+      ? 'wss://brillprime-monorepo.replit.app'
+      : 'ws://0.0.0.0:5000',
+    enablePushNotifications: true,
+    enableBiometrics: true,
+    cacheTimeout: 300000, // 5 minutes
+    jwtExpiryTime: '7d',
+    refreshTokenExpiryTime: '30d'
   }
 };
 

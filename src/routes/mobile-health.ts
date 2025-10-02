@@ -15,6 +15,7 @@ router.get('/mobile/health', async (req, res) => {
       services: {
         database: 'connected',
         api: 'operational',
+        redis: process.env.REDIS_DISABLED ? 'disabled' : 'operational',
       },
       version: '1.0.0',
       environment: process.env.NODE_ENV || 'development',
@@ -49,7 +50,7 @@ router.get('/mobile/config', async (req, res) => {
     const config = {
       apiVersion: '1.0.0',
       baseUrl: process.env.NODE_ENV === 'production' 
-        ? process.env.API_URL || 'https://your-app.replit.app/api'
+        ? 'https://brillprime-monorepo.replit.app/api'
         : 'http://0.0.0.0:5000/api',
       features: {
         qrScanner: true,
@@ -60,8 +61,19 @@ router.get('/mobile/config', async (req, res) => {
         realTimeTracking: true,
         offlineMode: true,
       },
+      limits: {
+        maxFileUploadSize: 10 * 1024 * 1024, // 10MB
+        maxCartItems: 50,
+        maxTransferAmount: 1000000, // ₦1,000,000
+      },
       endpoints: {
-        websocket: process.env.WEBSOCKET_URL || 'ws://0.0.0.0:5000',
+        websocket: process.env.WEBSOCKET_URL || (process.env.NODE_ENV === 'production' 
+          ? 'wss://brillprime-monorepo.replit.app' 
+          : 'ws://0.0.0.0:5000'),
+        payments: {
+          paystack: !!process.env.PAYSTACK_PUBLIC_KEY,
+          stripe: !!process.env.STRIPE_PUBLIC_KEY,
+        },
       },
     };
 
@@ -74,6 +86,41 @@ router.get('/mobile/config', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to load configuration',
+    });
+  }
+});
+
+// Mobile database integration verification
+router.get('/mobile/database-status', async (req, res) => {
+  try {
+    const [userCount] = await db.execute('SELECT COUNT(*) as count FROM users');
+    const [orderCount] = await db.execute('SELECT COUNT(*) as count FROM orders');
+    const [transactionCount] = await db.execute('SELECT COUNT(*) as count FROM transactions');
+    const [productCount] = await db.execute('SELECT COUNT(*) as count FROM products');
+
+    const dbStatus = {
+      connected: true,
+      sharedWithWebApp: true,
+      tables: {
+        users: userCount.rows[0]?.count || 0,
+        orders: orderCount.rows[0]?.count || 0,
+        transactions: transactionCount.rows[0]?.count || 0,
+        products: productCount.rows[0]?.count || 0
+      },
+      schemaVersion: '1.0.0',
+      timestamp: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      data: dbStatus
+    });
+  } catch (error) {
+    console.error('Mobile database status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Database connection failed',
+      connected: false
     });
   }
 });
