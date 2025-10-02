@@ -59,7 +59,7 @@ router.post('/submit', requireAuth, requireRole(['DRIVER']), async (req, res) =>
         kycStatus: 'UNDER_REVIEW',
         kycSubmittedAt: new Date(),
         kycData: {
-          ...driverProfile.kycData,
+          ...(typeof driverProfile.kycData === 'object' ? driverProfile.kycData : {}),
           documents: {
             license: {
               number: validatedData.licenseNumber,
@@ -87,22 +87,22 @@ router.post('/submit', requireAuth, requireRole(['DRIVER']), async (req, res) =>
         userId: driverId,
         documentType: 'DRIVERS_LICENSE',
         documentNumber: validatedData.licenseNumber,
-        documentImageUrl: validatedData.licenseImageUrl,
-        verificationStatus: 'PENDING'
+        fileName: validatedData.licenseImageUrl,
+        status: 'PENDING'
       },
       {
         userId: driverId,
         documentType: 'VEHICLE_REGISTRATION',
         documentNumber: validatedData.vehicleRegistrationNumber,
-        documentImageUrl: validatedData.vehicleRegistrationImageUrl,
-        verificationStatus: 'PENDING'
+        fileName: validatedData.vehicleRegistrationImageUrl,
+        status: 'PENDING'
       },
       {
         userId: driverId,
         documentType: 'INSURANCE_CERTIFICATE',
         documentNumber: validatedData.insuranceNumber,
-        documentImageUrl: validatedData.insuranceImageUrl,
-        verificationStatus: 'PENDING'
+        fileName: validatedData.insuranceImageUrl,
+        status: 'PENDING'
       }
     ]);
 
@@ -171,7 +171,7 @@ router.get('/status', requireAuth, requireRole(['DRIVER']), async (req, res) => 
       .select()
       .from(verificationDocuments)
       .where(eq(verificationDocuments.userId, driverId))
-      .orderBy(desc(verificationDocuments.createdAt));
+      .orderBy(desc(verificationDocuments.uploadedAt));
 
     res.json({
       success: true,
@@ -183,9 +183,9 @@ router.get('/status', requireAuth, requireRole(['DRIVER']), async (req, res) => 
         approvedAt: driverProfile.kycApprovedAt,
         documents: documents.map(doc => ({
           type: doc.documentType,
-          status: doc.verificationStatus,
+          status: doc.status,
           rejectionReason: doc.rejectionReason,
-          submittedAt: doc.createdAt
+          submittedAt: doc.uploadedAt
         })),
         nextSteps: getNextSteps(driverProfile.verificationStatus, driverProfile.kycStatus)
       }
@@ -295,10 +295,11 @@ router.post('/:driverId/decision', requireAuth, requireAdmin, async (req, res) =
     await db
       .update(verificationDocuments)
       .set({
-        verificationStatus: documentStatus,
+        status: documentStatus,
         rejectionReason: validatedData.rejectionReason,
         reviewedAt: new Date(),
-        reviewedBy: adminId
+        reviewedBy: adminId,
+        updatedAt: new Date()
       })
       .where(eq(verificationDocuments.userId, driverId));
 

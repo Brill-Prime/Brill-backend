@@ -15,28 +15,42 @@ const firebaseConfig = {
   appId: process.env.FIREBASE_APP_ID
 };
 
-// Validate Firebase configuration
-if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-  console.warn('⚠️ Firebase not configured: Please set FIREBASE_API_KEY and FIREBASE_PROJECT_ID environment variables');
-}
+// Check if Firebase is configured
+const isFirebaseConfigured = firebaseConfig.apiKey && firebaseConfig.projectId;
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-
-// Initialize Firebase services
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-
-// Initialize messaging for mobile push notifications (web only)
+let app: any = null;
+let auth: any = null;
+let db: any = null;
+let storage: any = null;
 let messaging: any = null;
-if (typeof globalThis !== 'undefined' && typeof (globalThis as any).window !== 'undefined') {
-  isSupported().then(supported => {
-    if (supported) {
-      messaging = getMessaging(app);
+
+if (isFirebaseConfigured) {
+  try {
+    // Initialize Firebase
+    app = initializeApp(firebaseConfig);
+
+    // Initialize Firebase services
+    auth = getAuth(app);
+    db = getFirestore(app);
+    storage = getStorage(app);
+
+    // Initialize messaging for mobile push notifications (web only)
+    if (typeof globalThis !== 'undefined' && typeof (globalThis as any).window !== 'undefined') {
+      isSupported().then(supported => {
+        if (supported) {
+          messaging = getMessaging(app);
+        }
+      });
     }
-  });
+
+    console.log('✅ Firebase client SDK initialized');
+  } catch (error) {
+    console.error('❌ Firebase initialization error:', error);
+  }
+} else {
+  console.warn('⚠️ Firebase client SDK not configured. Set FIREBASE_API_KEY and FIREBASE_PROJECT_ID to enable.');
+  console.warn('   For backend operations, use Firebase Admin SDK from src/config/firebase-admin.ts');
 }
 
-export { messaging };
+export { auth, db, storage, messaging };
 export default app;
