@@ -125,7 +125,7 @@ router.post('/register', async (req, res) => {
     const newUser = newUsers[0];
 
     // Generate OTP for email verification
-    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedOtp = crypto.createHash('sha256').update(otpCode).digest('hex');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
@@ -324,7 +324,7 @@ router.post('/verify-email', async (req, res) => {
   try {
     const { email, otp } = z.object({
       email: z.string().email(),
-      otp: z.string().length(5, 'OTP must be 5 digits')
+      otp: z.string().length(6, 'OTP must be 6 digits')
     }).parse(req.body);
 
     // Find user
@@ -441,7 +441,7 @@ router.post('/resend-verification', async (req, res) => {
     }
 
     // Generate new OTP
-    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const hashedOtp = crypto.createHash('sha256').update(otpCode).digest('hex');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
