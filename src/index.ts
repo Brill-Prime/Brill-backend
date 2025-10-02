@@ -253,10 +253,6 @@ app.use('/api/driver-verification', driverVerificationRouter);
 import deliveryAssignmentsRouter from './routes/delivery-assignments';
 app.use('/api/delivery-assignments', deliveryAssignmentsRouter);
 
-// Wallet management routes
-import walletRouter from './routes/wallet';
-app.use('/api/wallet', walletRouter);
-
 // Search routes
 import searchRouter from './routes/search';
 app.use('/api/search', searchRouter);

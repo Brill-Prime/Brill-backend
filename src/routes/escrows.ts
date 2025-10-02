@@ -2,31 +2,35 @@
 import express from 'express';
 import { db } from '../db/config';
 import { escrows, orders, users, auditLogs, transactions } from '../db/schema';
-import { eq, isNull, desc, and, or, ilike } from 'drizzle-orm';
+import { eq, isNull, desc, and, or } from 'drizzle-orm';
 import { z } from 'zod';
-import { requireAuth, requireRole, requireAdmin } from '../utils/auth';
+import { requireAuth, requireRole } from '../utils/auth';
 
 const router = express.Router();
 
 // Validation schemas
 const createEscrowSchema = z.object({
   orderId: z.number().int().positive(),
-  payerId: z.number().int().positive(),
-  payeeId: z.number().int().positive(),
   amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Amount must be a positive number"
   }),
-  paystackEscrowId: z.string().optional(),
-  transactionRef: z.string().optional()
+  paystackReference: z.string().optional(),
+  merchantAmount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+    message: "Merchant amount must be a positive number"
+  }),
+  driverAmount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+    message: "Driver amount must be a positive number"
+  })
 });
 
-const updateEscrowSchema = z.object({
-  amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
-    message: "Amount must be a positive number"
-  }).optional(),
-  status: z.enum(['HELD', 'RELEASED', 'REFUNDED', 'DISPUTED']).optional(),
-  paystackEscrowId: z.string().optional(),
-  transactionRef: z.string().optional()
+const confirmDeliverySchema = z.object({
+  orderId: z.number().int().positive()
+});
+
+const disputeEscrowSchema = z.object({
+  escrowId: z.number().int().positive(),
+  reason: z.string().min(10),
+  disputedBy: z.enum(['CONSUMER', 'DRIVER'])
 });
 
 // Helper function to log audit events
@@ -46,7 +50,7 @@ const logAuditEvent = async (userId: number, action: string, entityId: number, d
   }
 };
 
-// POST /api/escrows - Create a new escrow
+// POST /api/escrows - Create escrow (called during order creation)
 router.post('/', requireAuth, async (req, res) => {
   try {
     const validatedData = createEscrowSchema.parse(req.body);
@@ -69,51 +73,17 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
-    // Validate payer exists
-    const payerExists = await db
-      .select()
-      .from(users)
-      .where(and(
-        eq(users.id, validatedData.payerId),
-        isNull(users.deletedAt)
-      ))
-      .limit(1);
+    const order = orderExists[0];
 
-    if (!payerExists.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payer not found'
-      });
-    }
-
-    // Validate payee exists
-    const payeeExists = await db
-      .select()
-      .from(users)
-      .where(and(
-        eq(users.id, validatedData.payeeId),
-        isNull(users.deletedAt)
-      ))
-      .limit(1);
-
-    if (!payeeExists.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Payee not found'
-      });
-    }
-
-    // Check if user has permission to create escrow
-    if (currentUser.role !== 'ADMIN' && 
-        currentUser.id !== validatedData.payerId && 
-        currentUser.id !== orderExists[0].customerId) {
+    // Verify user is the customer
+    if (currentUser.id !== order.customerId) {
       return res.status(403).json({
         success: false,
-        message: 'Only admin, payer, or order customer can create escrow'
+        message: 'Only the order customer can create escrow'
       });
     }
 
-    // Check if escrow already exists for this order
+    // Check if escrow already exists
     const existingEscrow = await db
       .select()
       .from(escrows)
@@ -130,18 +100,37 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
+    // Create escrow with merchant and driver split
     const newEscrow = await db.insert(escrows).values({
       orderId: validatedData.orderId,
-      payerId: validatedData.payerId,
-      payeeId: validatedData.payeeId,
+      payerId: order.customerId,
+      payeeId: order.merchantId!, // Merchant receives payment
       amount: validatedData.amount,
       status: 'HELD',
-      paystackEscrowId: validatedData.paystackEscrowId || null,
-      transactionRef: validatedData.transactionRef || null,
+      paystackEscrowId: validatedData.paystackReference || null,
+      transactionRef: validatedData.paystackReference || `ESC_${Date.now()}_${validatedData.orderId}`,
       createdAt: new Date()
     }).returning();
 
-    // Log audit event
+    // Store split amounts in metadata
+    await db.insert(transactions).values({
+      userId: order.customerId,
+      orderId: validatedData.orderId,
+      amount: validatedData.amount,
+      currency: 'NGN',
+      type: 'PAYMENT',
+      status: 'PENDING',
+      transactionRef: newEscrow[0].transactionRef!,
+      description: `Escrow payment for order ${order.orderNumber}`,
+      metadata: {
+        merchantAmount: validatedData.merchantAmount,
+        driverAmount: validatedData.driverAmount,
+        escrowId: newEscrow[0].id
+      },
+      initiatedAt: new Date(),
+      createdAt: new Date()
+    });
+
     await logAuditEvent(
       currentUser.id,
       'ESCROW_CREATED',
@@ -151,7 +140,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Escrow created successfully',
+      message: 'Escrow created and payment held',
       data: newEscrow[0]
     });
   } catch (error) {
@@ -172,22 +161,309 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/escrows - List all escrows
+// POST /api/escrows/delivery/complete - Driver marks delivery complete
+router.post('/delivery/complete', requireAuth, requireRole(['DRIVER']), async (req, res) => {
+  try {
+    const { orderId } = confirmDeliverySchema.parse(req.body);
+    const currentUser = req.user!;
+
+    const order = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!order.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Verify driver is assigned to this order
+    if (order[0].driverId !== currentUser.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only assigned driver can mark delivery complete'
+      });
+    }
+
+    // Update order status
+    await db
+      .update(orders)
+      .set({
+        status: 'DELIVERED',
+        deliveredAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId));
+
+    await logAuditEvent(
+      currentUser.id,
+      'DELIVERY_COMPLETED',
+      orderId,
+      { driverId: currentUser.id }
+    );
+
+    res.json({
+      success: true,
+      message: 'Delivery marked as complete. Awaiting consumer confirmation.'
+    });
+  } catch (error) {
+    console.error('Complete delivery error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark delivery complete'
+    });
+  }
+});
+
+// POST /api/escrows/delivery/confirm - Consumer confirms receipt
+router.post('/delivery/confirm', requireAuth, async (req, res) => {
+  try {
+    const { orderId } = confirmDeliverySchema.parse(req.body);
+    const currentUser = req.user!;
+
+    const order = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!order.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Verify user is the customer
+    if (order[0].customerId !== currentUser.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the customer can confirm delivery'
+      });
+    }
+
+    // Verify delivery was marked complete
+    if (order[0].status !== 'DELIVERED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Delivery must be marked complete by driver first'
+      });
+    }
+
+    await logAuditEvent(
+      currentUser.id,
+      'DELIVERY_CONFIRMED',
+      orderId,
+      { customerId: currentUser.id }
+    );
+
+    // Trigger automatic escrow release
+    const releaseResult = await releaseEscrowFunds(orderId, currentUser.id);
+
+    if (!releaseResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: releaseResult.message || 'Failed to release escrow funds'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Delivery confirmed. Payments released to merchant and driver.',
+      data: releaseResult.data
+    });
+  } catch (error) {
+    console.error('Confirm delivery error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm delivery'
+    });
+  }
+});
+
+// POST /api/escrows/dispute - Raise dispute
+router.post('/dispute', requireAuth, async (req, res) => {
+  try {
+    const validatedData = disputeEscrowSchema.parse(req.body);
+    const currentUser = req.user!;
+
+    const escrow = await db
+      .select()
+      .from(escrows)
+      .where(and(
+        eq(escrows.id, validatedData.escrowId),
+        isNull(escrows.deletedAt)
+      ))
+      .limit(1);
+
+    if (!escrow.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Escrow not found'
+      });
+    }
+
+    // Get order details
+    const order = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, escrow[0].orderId))
+      .limit(1);
+
+    if (!order.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Associated order not found'
+      });
+    }
+
+    // Verify user is involved (consumer or driver)
+    const isConsumer = order[0].customerId === currentUser.id;
+    const isDriver = order[0].driverId === currentUser.id;
+
+    if (!isConsumer && !isDriver) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only consumer or driver can raise dispute'
+      });
+    }
+
+    // Update escrow to disputed
+    const updatedEscrow = await db
+      .update(escrows)
+      .set({
+        status: 'DISPUTED'
+      })
+      .where(eq(escrows.id, validatedData.escrowId))
+      .returning();
+
+    // Create audit log
+    await logAuditEvent(
+      currentUser.id,
+      'ESCROW_DISPUTED',
+      validatedData.escrowId,
+      { 
+        reason: validatedData.reason,
+        disputedBy: validatedData.disputedBy,
+        orderId: escrow[0].orderId
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Dispute raised. Admin will review the case.',
+      data: updatedEscrow[0]
+    });
+  } catch (error) {
+    console.error('Dispute escrow error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Failed to raise dispute'
+    });
+  }
+});
+
+// POST /api/escrows/:id/release - Admin manual release
+router.post('/:id/release', requireAuth, requireRole(['ADMIN']), async (req, res) => {
+  try {
+    const escrowId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { merchantAmount, driverAmount } = req.body;
+
+    if (isNaN(escrowId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid escrow ID'
+      });
+    }
+
+    const escrow = await db
+      .select()
+      .from(escrows)
+      .where(and(
+        eq(escrows.id, escrowId),
+        isNull(escrows.deletedAt)
+      ))
+      .limit(1);
+
+    if (!escrow.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Escrow not found'
+      });
+    }
+
+    const releaseResult = await releaseEscrowFunds(escrow[0].orderId, currentUser.id, true, merchantAmount, driverAmount);
+
+    if (!releaseResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: releaseResult.message || 'Failed to release escrow funds'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Escrow released by admin',
+      data: releaseResult.data
+    });
+  } catch (error) {
+    console.error('Admin release error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to release escrow'
+    });
+  }
+});
+
+// GET /api/escrows - List escrows
 router.get('/', requireAuth, async (req, res) => {
   try {
     const currentUser = req.user!;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
-    const search = req.query.search as string;
     const status = req.query.status as string;
-    const orderId = req.query.orderId as string;
     
     const offset = (page - 1) * limit;
-
-    // Build query conditions
     const conditions = [isNull(escrows.deletedAt)];
 
-    // Non-admin users can only see their own escrows
+    // Non-admin users see their own escrows
     if (currentUser.role !== 'ADMIN') {
       conditions.push(
         or(
@@ -197,71 +473,23 @@ router.get('/', requireAuth, async (req, res) => {
       );
     }
 
-    if (search) {
-      conditions.push(ilike(escrows.transactionRef, `%${search}%`));
-    }
-
     if (status) {
       conditions.push(eq(escrows.status, status as any));
     }
 
-    if (orderId) {
-      conditions.push(eq(escrows.orderId, parseInt(orderId)));
-    }
-
     const allEscrows = await db
-      .select({
-        id: escrows.id,
-        orderId: escrows.orderId,
-        orderNumber: orders.orderNumber,
-        payerId: escrows.payerId,
-        payerName: users.fullName,
-        payeeId: escrows.payeeId,
-        amount: escrows.amount,
-        status: escrows.status,
-        paystackEscrowId: escrows.paystackEscrowId,
-        transactionRef: escrows.transactionRef,
-        createdAt: escrows.createdAt,
-        releasedAt: escrows.releasedAt,
-        cancelledAt: escrows.cancelledAt
-      })
+      .select()
       .from(escrows)
-      .leftJoin(orders, eq(escrows.orderId, orders.id))
-      .leftJoin(users, eq(escrows.payerId, users.id))
       .where(and(...conditions))
       .orderBy(desc(escrows.createdAt))
       .limit(limit)
       .offset(offset);
 
-    // Get payee names
-    const escrowsWithPayeeNames = await Promise.all(
-      allEscrows.map(async (escrow) => {
-        const payee = await db
-          .select({ fullName: users.fullName })
-          .from(users)
-          .where(eq(users.id, escrow.payeeId))
-          .limit(1);
-        
-        return {
-          ...escrow,
-          payeeName: payee[0]?.fullName || 'Unknown'
-        };
-      })
-    );
-
-    // Get total count for pagination
-    const totalCount = await db
-      .select({ count: escrows.id })
-      .from(escrows)
-      .where(and(...conditions));
-
     res.json({
       success: true,
-      data: escrowsWithPayeeNames,
+      data: allEscrows,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalCount.length / limit),
-        totalItems: totalCount.length,
         itemsPerPage: limit
       }
     });
@@ -274,396 +502,125 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/escrows/:id - Get escrow details
-router.get('/:id', requireAuth, async (req, res) => {
+// Helper function to release escrow funds
+async function releaseEscrowFunds(orderId: number, releasedBy: number, isAdmin: boolean = false, merchantAmountOverride?: string, driverAmountOverride?: string) {
   try {
-    const escrowId = parseInt(req.params.id);
-    const currentUser = req.user!;
-    
-    if (isNaN(escrowId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid escrow ID'
-      });
-    }
-
-    const escrowDetails = await db
-      .select({
-        id: escrows.id,
-        orderId: escrows.orderId,
-        orderNumber: orders.orderNumber,
-        payerId: escrows.payerId,
-        payerName: users.fullName,
-        payerEmail: users.email,
-        payeeId: escrows.payeeId,
-        amount: escrows.amount,
-        status: escrows.status,
-        paystackEscrowId: escrows.paystackEscrowId,
-        transactionRef: escrows.transactionRef,
-        createdAt: escrows.createdAt,
-        releasedAt: escrows.releasedAt,
-        cancelledAt: escrows.cancelledAt
-      })
-      .from(escrows)
-      .leftJoin(orders, eq(escrows.orderId, orders.id))
-      .leftJoin(users, eq(escrows.payerId, users.id))
-      .where(and(
-        eq(escrows.id, escrowId),
-        isNull(escrows.deletedAt)
-      ))
-      .limit(1);
-
-    if (!escrowDetails.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Escrow not found'
-      });
-    }
-
-    const escrow = escrowDetails[0];
-
-    // Check access permissions
-    if (currentUser.role !== 'ADMIN' && 
-        currentUser.id !== escrow.payerId && 
-        currentUser.id !== escrow.payeeId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-
-    // Get payee details
-    const payee = await db
-      .select({ fullName: users.fullName, email: users.email })
-      .from(users)
-      .where(eq(users.id, escrow.payeeId))
-      .limit(1);
-
-    const escrowWithPayee = {
-      ...escrow,
-      payeeName: payee[0]?.fullName || 'Unknown',
-      payeeEmail: payee[0]?.email || 'Unknown'
-    };
-
-    res.json({
-      success: true,
-      data: escrowWithPayee
-    });
-  } catch (error) {
-    console.error('Get escrow error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch escrow'
-    });
-  }
-});
-
-// PUT /api/escrows/:id - Update escrow details
-router.put('/:id', requireAuth, requireRole(['ADMIN']), async (req, res) => {
-  try {
-    const escrowId = parseInt(req.params.id);
-    const currentUser = req.user!;
-    
-    if (isNaN(escrowId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid escrow ID'
-      });
-    }
-
-    const validatedData = updateEscrowSchema.parse(req.body);
-
-    // Check if escrow exists
-    const existingEscrow = await db
+    const escrow = await db
       .select()
       .from(escrows)
       .where(and(
-        eq(escrows.id, escrowId),
+        eq(escrows.orderId, orderId),
         isNull(escrows.deletedAt)
       ))
       .limit(1);
 
-    if (!existingEscrow.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Escrow not found'
-      });
+    if (!escrow.length) {
+      return { success: false, message: 'Escrow not found' };
     }
 
-    const escrow = existingEscrow[0];
-
-    // Prevent updating released or refunded escrows
-    if (escrow.status === 'RELEASED' || escrow.status === 'REFUNDED') {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot update released or refunded escrow'
-      });
+    if (escrow[0].status === 'RELEASED') {
+      return { success: false, message: 'Escrow already released' };
     }
 
-    const updatedEscrow = await db
-      .update(escrows)
-      .set(validatedData)
-      .where(eq(escrows.id, escrowId))
-      .returning();
-
-    // Log audit event
-    await logAuditEvent(
-      currentUser.id,
-      'ESCROW_UPDATED',
-      escrowId,
-      { changes: validatedData }
-    );
-
-    res.json({
-      success: true,
-      message: 'Escrow updated successfully',
-      data: updatedEscrow[0]
-    });
-  } catch (error) {
-    console.error('Update escrow error:', error);
-    
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation error',
-        errors: error.issues
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update escrow'
-    });
-  }
-});
-
-// POST /api/escrows/:id/release - Release escrow funds
-router.post('/:id/release', requireAuth, requireRole(['ADMIN', 'CONSUMER']), async (req, res) => {
-  try {
-    const escrowId = parseInt(req.params.id);
-    const currentUser = req.user!;
-    const { reason } = req.body;
-    
-    if (isNaN(escrowId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid escrow ID'
-      });
-    }
-
-    // Check if escrow exists
-    const existingEscrow = await db
+    // Get transaction metadata for split amounts
+    const transaction = await db
       .select()
-      .from(escrows)
-      .where(and(
-        eq(escrows.id, escrowId),
-        isNull(escrows.deletedAt)
-      ))
+      .from(transactions)
+      .where(eq(transactions.transactionRef, escrow[0].transactionRef!))
       .limit(1);
 
-    if (!existingEscrow.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Escrow not found'
-      });
+    if (!transaction.length) {
+      return { success: false, message: 'Transaction not found' };
     }
 
-    const escrow = existingEscrow[0];
+    const metadata = transaction[0].metadata as any || {};
+    const merchantAmount = merchantAmountOverride || metadata.merchantAmount || '0';
+    const driverAmount = driverAmountOverride || metadata.driverAmount || '0';
 
-    // Check if escrow can be released
-    if (escrow.status !== 'HELD') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only held escrows can be released'
-      });
-    }
-
-    // Check permissions (only admin or payer can release)
-    if (currentUser.role !== 'ADMIN' && currentUser.id !== escrow.payerId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only admin or payer can release escrow'
-      });
-    }
-
-    // Get order details for validation
+    // Get order
     const order = await db
       .select()
       .from(orders)
-      .where(eq(orders.id, escrow.orderId))
+      .where(eq(orders.id, orderId))
       .limit(1);
 
     if (!order.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated order not found'
-      });
+      return { success: false, message: 'Order not found' };
     }
 
-    // Only release if order is delivered or admin override
-    if (currentUser.role !== 'ADMIN' && order[0].status !== 'DELIVERED') {
-      return res.status(400).json({
-        success: false,
-        message: 'Escrow can only be released after order delivery'
-      });
-    }
+    // Release to merchant
+    await db.insert(transactions).values({
+      userId: order[0].merchantId!,
+      orderId,
+      amount: merchantAmount,
+      netAmount: merchantAmount,
+      currency: 'NGN',
+      type: 'ESCROW_RELEASE',
+      status: 'COMPLETED',
+      transactionRef: `MERCHANT_${escrow[0].transactionRef}`,
+      description: `Payment for order ${order[0].orderNumber}`,
+      completedAt: new Date(),
+      createdAt: new Date()
+    });
 
-    // Release the escrow
+    // Release to driver
+    await db.insert(transactions).values({
+      userId: order[0].driverId!,
+      orderId,
+      amount: driverAmount,
+      netAmount: driverAmount,
+      currency: 'NGN',
+      type: 'ESCROW_RELEASE',
+      status: 'COMPLETED',
+      transactionRef: `DRIVER_${escrow[0].transactionRef}`,
+      description: `Delivery fee for order ${order[0].orderNumber}`,
+      completedAt: new Date(),
+      createdAt: new Date()
+    });
+
+    // Update escrow status
     const updatedEscrow = await db
       .update(escrows)
       .set({
         status: 'RELEASED',
         releasedAt: new Date()
       })
-      .where(eq(escrows.id, escrowId))
+      .where(eq(escrows.id, escrow[0].id))
       .returning();
 
-    // Create a transaction record for the release
-    await db.insert(transactions).values({
-      userId: escrow.payeeId,
-      orderId: escrow.orderId,
-      recipientId: escrow.payeeId,
-      amount: escrow.amount,
-      netAmount: escrow.amount,
-      currency: 'NGN',
-      type: 'ESCROW_RELEASE',
-      status: 'COMPLETED',
-      transactionRef: escrow.transactionRef || `ESC_REL_${escrowId}_${Date.now()}`,
-      description: `Escrow release for order ${order[0].orderNumber}`,
-      completedAt: new Date(),
-      createdAt: new Date()
-    });
+    // Update original transaction
+    await db
+      .update(transactions)
+      .set({
+        status: 'COMPLETED',
+        completedAt: new Date()
+      })
+      .where(eq(transactions.id, transaction[0].id));
 
-    // Log audit event
     await logAuditEvent(
-      currentUser.id,
+      releasedBy,
       'ESCROW_RELEASED',
-      escrowId,
-      { orderId: escrow.orderId, amount: escrow.amount, reason }
+      escrow[0].id,
+      { 
+        orderId,
+        merchantAmount,
+        driverAmount,
+        isAdmin
+      }
     );
 
-    res.json({
-      success: true,
-      message: 'Escrow released successfully',
-      data: updatedEscrow[0]
-    });
+    return { 
+      success: true, 
+      data: {
+        escrow: updatedEscrow[0],
+        merchantAmount,
+        driverAmount
+      }
+    };
   } catch (error) {
     console.error('Release escrow error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to release escrow'
-    });
+    return { success: false, message: 'Failed to release funds' };
   }
-});
-
-// POST /api/escrows/:id/refund - Refund escrow funds
-router.post('/:id/refund', requireAuth, requireRole(['ADMIN']), async (req, res) => {
-  try {
-    const escrowId = parseInt(req.params.id);
-    const currentUser = req.user!;
-    const { reason } = req.body;
-    
-    if (isNaN(escrowId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid escrow ID'
-      });
-    }
-
-    if (!reason) {
-      return res.status(400).json({
-        success: false,
-        message: 'Refund reason is required'
-      });
-    }
-
-    // Check if escrow exists
-    const existingEscrow = await db
-      .select()
-      .from(escrows)
-      .where(and(
-        eq(escrows.id, escrowId),
-        isNull(escrows.deletedAt)
-      ))
-      .limit(1);
-
-    if (!existingEscrow.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Escrow not found'
-      });
-    }
-
-    const escrow = existingEscrow[0];
-
-    // Check if escrow can be refunded
-    if (escrow.status !== 'HELD' && escrow.status !== 'DISPUTED') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only held or disputed escrows can be refunded'
-      });
-    }
-
-    // Get order details
-    const order = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.id, escrow.orderId))
-      .limit(1);
-
-    if (!order.length) {
-      return res.status(404).json({
-        success: false,
-        message: 'Associated order not found'
-      });
-    }
-
-    // Refund the escrow
-    const updatedEscrow = await db
-      .update(escrows)
-      .set({
-        status: 'REFUNDED',
-        cancelledAt: new Date()
-      })
-      .where(eq(escrows.id, escrowId))
-      .returning();
-
-    // Create a transaction record for the refund
-    await db.insert(transactions).values({
-      userId: escrow.payerId,
-      orderId: escrow.orderId,
-      recipientId: escrow.payerId,
-      amount: escrow.amount,
-      netAmount: escrow.amount,
-      currency: 'NGN',
-      type: 'REFUND',
-      status: 'COMPLETED',
-      transactionRef: escrow.transactionRef || `ESC_REF_${escrowId}_${Date.now()}`,
-      description: `Escrow refund for order ${order[0].orderNumber}: ${reason}`,
-      completedAt: new Date(),
-      createdAt: new Date()
-    });
-
-    // Log audit event
-    await logAuditEvent(
-      currentUser.id,
-      'ESCROW_REFUNDED',
-      escrowId,
-      { orderId: escrow.orderId, amount: escrow.amount, reason }
-    );
-
-    res.json({
-      success: true,
-      message: 'Escrow refunded successfully',
-      data: updatedEscrow[0]
-    });
-  } catch (error) {
-    console.error('Refund escrow error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to refund escrow'
-    });
-  }
-});
+}
 
 export default router;
