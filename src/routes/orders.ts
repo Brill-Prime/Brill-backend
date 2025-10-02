@@ -1322,4 +1322,557 @@ router.post('/:id/complete', requireAuth, requireRole(['DRIVER', 'ADMIN']), asyn
   }
 });
 
+// POST /api/orders/:id/pay - Process payment for order
+router.post('/:id/pay', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { paymentMethod, paystackReference } = req.body;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Only customer can pay for order
+    if (currentUser.id !== order.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the customer can pay for this order'
+      });
+    }
+
+    // Check if order is in the right status
+    if (order.status !== 'PENDING' && order.status !== 'CONFIRMED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order cannot be paid in current status'
+      });
+    }
+
+    // Update order status to confirmed
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        status: 'CONFIRMED',
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'ORDER_PAYMENT_PROCESSED',
+      orderId,
+      { orderNumber: order.orderNumber, paymentMethod, paystackReference }
+    );
+
+    res.json({
+      success: true,
+      message: 'Payment processed successfully',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Process payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process payment'
+    });
+  }
+});
+
+// POST /api/orders/:id/release-payment - Release payment to merchant and driver
+router.post('/:id/release-payment', requireAuth, requireRole(['ADMIN', 'CUSTOMER']), async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (customer or admin)
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== order.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the customer or admin can release payment'
+      });
+    }
+
+    // Check if order is delivered
+    if (order.status !== 'DELIVERED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment can only be released after delivery'
+      });
+    }
+
+    // Update confirmation deadline to trigger release
+    const updatedOrder = await db
+      .update(orders)
+      .set({
+        confirmationDeadline: new Date(Date.now() + 5000), // 5 seconds for immediate processing
+        updatedAt: new Date()
+      })
+      .where(eq(orders.id, orderId))
+      .returning();
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'PAYMENT_RELEASE_INITIATED',
+      orderId,
+      { orderNumber: order.orderNumber }
+    );
+
+    res.json({
+      success: true,
+      message: 'Payment release initiated. Funds will be transferred shortly.',
+      data: updatedOrder[0]
+    });
+  } catch (error) {
+    console.error('Release payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to release payment'
+    });
+  }
+});
+
+// POST /api/orders/:id/dispute - Raise a dispute for order
+router.post('/:id/dispute', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { reason, description } = req.body;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    if (!reason || !description) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reason and description are required'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions (customer, merchant, or driver)
+    if (currentUser.id !== order.customerId && 
+        currentUser.id !== order.merchantId && 
+        currentUser.id !== order.driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Cannot dispute cancelled orders
+    if (order.status === 'CANCELLED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot dispute cancelled orders'
+      });
+    }
+
+    // Log audit event with dispute details
+    await logAuditEvent(
+      currentUser.id,
+      'ORDER_DISPUTED',
+      orderId,
+      { 
+        orderNumber: order.orderNumber, 
+        reason, 
+        description,
+        disputedBy: currentUser.role
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Dispute raised successfully. Our team will review and contact you shortly.',
+      data: {
+        orderId,
+        disputeReason: reason,
+        disputeDescription: description
+      }
+    });
+  } catch (error) {
+    console.error('Dispute order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to raise dispute'
+    });
+  }
+});
+
+// POST /api/orders/:id/refund - Request refund for order
+router.post('/:id/refund', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { reason, amount } = req.body;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reason is required'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Only customer or admin can request refund
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== order.customerId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the customer or admin can request refund'
+      });
+    }
+
+    // Validate refund amount if provided
+    const refundAmount = amount || order.totalAmount;
+    if (parseFloat(refundAmount) <= 0 || parseFloat(refundAmount) > parseFloat(order.totalAmount)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid refund amount'
+      });
+    }
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'REFUND_REQUESTED',
+      orderId,
+      { 
+        orderNumber: order.orderNumber, 
+        reason,
+        refundAmount
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Refund request submitted successfully. Our team will process it shortly.',
+      data: {
+        orderId,
+        refundAmount,
+        refundReason: reason
+      }
+    });
+  } catch (error) {
+    console.error('Refund request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to request refund'
+    });
+  }
+});
+
+// GET /api/orders/:id/tracking - Get tracking information for order
+router.get('/:id/tracking', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && 
+        currentUser.id !== order.customerId && 
+        currentUser.id !== order.merchantId && 
+        currentUser.id !== order.driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        orderId,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        deliveryAddress: order.deliveryAddress,
+        pickupAddress: order.pickupAddress,
+        deliveryLatitude: order.deliveryLatitude,
+        deliveryLongitude: order.deliveryLongitude,
+        acceptedAt: order.acceptedAt,
+        pickedUpAt: order.pickedUpAt,
+        deliveredAt: order.deliveredAt,
+        estimatedDelivery: order.confirmationDeadline
+      }
+    });
+  } catch (error) {
+    console.error('Get tracking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get tracking information'
+    });
+  }
+});
+
+// POST /api/orders/:id/notify - Send notification for order
+router.post('/:id/notify', requireAuth, requireRole(['MERCHANT', 'DRIVER', 'ADMIN']), async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { message, notificationType } = req.body;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message is required'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && 
+        currentUser.id !== order.merchantId && 
+        currentUser.id !== order.driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only merchant, driver, or admin can send notifications'
+      });
+    }
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'ORDER_NOTIFICATION_SENT',
+      orderId,
+      { 
+        orderNumber: order.orderNumber, 
+        message,
+        notificationType,
+        sentBy: currentUser.role
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Notification sent successfully',
+      data: {
+        orderId,
+        message,
+        notificationType
+      }
+    });
+  } catch (error) {
+    console.error('Send notification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send notification'
+    });
+  }
+});
+
+// GET /api/orders/active - Get active orders for current user
+router.get('/active', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+
+    // Build conditions based on user role
+    const conditions = [isNull(orders.deletedAt)];
+
+    // Active orders are those not delivered or cancelled
+    conditions.push(
+      and(
+        or(
+          eq(orders.status, 'PENDING'),
+          eq(orders.status, 'CONFIRMED'),
+          eq(orders.status, 'ACCEPTED'),
+          eq(orders.status, 'PICKED_UP'),
+          eq(orders.status, 'IN_TRANSIT')
+        )!
+      )!
+    );
+
+    // Filter by user role
+    if (currentUser.role === 'CONSUMER') {
+      conditions.push(eq(orders.customerId, currentUser.id));
+    } else if (currentUser.role === 'MERCHANT') {
+      conditions.push(eq(orders.merchantId, currentUser.id));
+    } else if (currentUser.role === 'DRIVER') {
+      conditions.push(eq(orders.driverId, currentUser.id));
+    }
+    // Admin sees all active orders
+
+    const activeOrders = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        customerId: orders.customerId,
+        customerName: users.fullName,
+        merchantId: orders.merchantId,
+        driverId: orders.driverId,
+        orderType: orders.orderType,
+        status: orders.status,
+        totalAmount: orders.totalAmount,
+        deliveryAddress: orders.deliveryAddress,
+        pickupAddress: orders.pickupAddress,
+        acceptedAt: orders.acceptedAt,
+        pickedUpAt: orders.pickedUpAt,
+        createdAt: orders.createdAt
+      })
+      .from(orders)
+      .leftJoin(users, eq(orders.customerId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(orders.createdAt));
+
+    res.json({
+      success: true,
+      data: activeOrders,
+      count: activeOrders.length
+    });
+  } catch (error) {
+    console.error('Get active orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active orders'
+    });
+  }
+});
+
 export default router;
