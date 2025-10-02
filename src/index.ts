@@ -62,7 +62,7 @@ import adminDashboardRouter from './routes/admin-dashboard';
 import configRouter from './routes/config';
 import healthRouter from './routes/health';
 import driverVerificationRouter from './routes/driver-verification';
-import deliveryAssignmentsRouter from './routes/delivery-assignments';
+import deliveryAssignmentsRoutes from './routes/delivery-assignments';
 import searchRouter from './routes/search';
 import uploadRouter from './routes/upload';
 import geolocationRouter from './routes/geolocation';
@@ -71,6 +71,7 @@ import paymentsRouter from './routes/payments';
 import paystackWebhooksRouter from './routes/paystack-webhooks';
 import escrowStatusRoutes from './routes/escrow-status';
 import { startEscrowAutoReleaseService } from './services/escrow-auto-release';
+import driverOrdersRoutes from './routes/driver-orders';
 
 const app = express();
 const server = createServer(app);
@@ -260,7 +261,7 @@ app.use('/api', RateLimitingService.apiLimit);
 app.use('/api/driver-verification', driverVerificationRouter);
 
 // Delivery assignment routes
-app.use('/api/delivery-assignments', deliveryAssignmentsRouter);
+app.use('/api/delivery-assignments', deliveryAssignmentsRoutes);
 
 // Search routes
 app.use('/api/search', searchRouter);
@@ -299,6 +300,9 @@ app.use('/api/admin/system-metrics', adminSystemMetricsRoutes);
 
 // Register escrow status route
 app.use('/api/escrow-status', escrowStatusRoutes);
+
+// Register driver-orders route
+app.use('/api/driver', driverOrdersRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
