@@ -296,17 +296,189 @@ router.post('/sync-offline-actions', requireAuth, async (req, res) => {
   }
 });
 
+// Process payment from mobile
+router.post('/process-payment', requireAuth, async (req, res) => {
+  try {
+    const { orderId, amount, paymentMethod } = req.body;
+    const userId = req.session.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid amount is required'
+      });
+    }
+
+    // Get user email for Paystack
+    const PaystackService = (await import('../services/paystack')).default;
+    const userResult = await fetch(`${process.env.API_BASE_URL || 'http://0.0.0.0:5000'}/api/users/${userId}`);
+    const userData = await userResult.json();
+
+    if (!userData.success) {
+      return res.status(400).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const reference = `MOBILE_${Date.now()}_${userId}`;
+    
+    // Initialize payment with Paystack
+    const paymentInit = await PaystackService.initializePayment(
+      userData.data.email,
+      amount,
+      reference,
+      {
+        orderId,
+        userId,
+        source: 'mobile',
+        paymentMethod
+      }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        paymentUrl: paymentInit.authorization_url,
+        reference: paymentInit.reference,
+        accessCode: paymentInit.access_code
+      }
+    });
+  } catch (error: any) {
+    console.error('Mobile payment processing error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process payment'
+    });
+  }
+});
+
+// Verify payment from mobile
+router.post('/verify-payment', requireAuth, async (req, res) => {
+  try {
+    const { reference } = req.body;
+    const userId = req.session.user?.id;
+
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment reference is required'
+      });
+    }
+
+    const PaystackService = (await import('../services/paystack')).default;
+    const verification = await PaystackService.verifyPayment(reference);
+
+    if (verification.status === 'success') {
+      res.json({
+        success: true,
+        data: {
+          amount: verification.amount / 100,
+          status: verification.status,
+          paidAt: verification.paid_at,
+          reference: verification.reference
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Payment verification failed',
+        status: verification.status
+      });
+    }
+  } catch (error: any) {
+    console.error('Mobile payment verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify payment'
+    });
+  }
+});
+
+// Get payment history for mobile
+router.get('/payment-history', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+    const { page = 1, limit = 20 } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required'
+      });
+    }
+
+    const { db } = await import('../db/config');
+    const { transactions } = await import('../db/schema');
+    const { eq, desc } = await import('drizzle-orm');
+
+    const userTransactions = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.userId, userId))
+      .orderBy(desc(transactions.createdAt))
+      .limit(parseInt(limit as string))
+      .offset((parseInt(page as string) - 1) * parseInt(limit as string));
+
+    res.json({
+      success: true,
+      data: {
+        transactions: userTransactions,
+        pagination: {
+          page: parseInt(page as string),
+          limit: parseInt(limit as string),
+          total: userTransactions.length
+        }
+      }
+    });
+  } catch (error: any) {
+    console.error('Payment history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment history'
+    });
+  }
+});
+
 // Helper function to process offline actions
 async function processOfflineAction(action: any, userId: number): Promise<any> {
+  const { db } = await import('../db/config');
+  const { transactions, orders } = await import('../db/schema');
+  
   switch (action.type) {
     case 'CREATE_ORDER':
-      return { message: 'Order creation queued for processing' };
+      // Queue order for processing when online
+      return { message: 'Order creation queued for processing', queued: true };
     
     case 'UPDATE_PROFILE':
-      return { message: 'Profile update processed' };
+      // Queue profile update
+      return { message: 'Profile update processed', updated: true };
     
     case 'PAYMENT':
-      return { message: 'Payment queued for processing' };
+      // Store payment attempt for retry
+      if (action.data?.reference) {
+        await db.insert(transactions).values({
+          userId,
+          amount: action.data.amount.toString(),
+          type: 'PAYMENT',
+          status: 'PENDING',
+          paymentMethod: action.data.paymentMethod || 'PAYSTACK',
+          transactionRef: action.data.reference,
+          metadata: {
+            ...action.data.metadata,
+            offlineQueued: true,
+            queuedAt: new Date().toISOString()
+          }
+        });
+      }
+      return { message: 'Payment queued for processing', queued: true };
     
     default:
       throw new Error(`Unknown action type: ${action.type}`);

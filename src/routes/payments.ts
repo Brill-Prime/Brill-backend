@@ -151,4 +151,127 @@ router.get('/history', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/payments/status/:reference - Get payment status
+router.get('/status/:reference', requireAuth, async (req, res) => {
+  try {
+    const { reference } = req.params;
+    const userId = req.user!.id;
+
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.paystackTransactionId, reference))
+      .limit(1);
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found'
+      });
+    }
+
+    // Verify user owns this transaction
+    if (transaction.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        reference: transaction.paystackTransactionId,
+        status: transaction.status,
+        amount: transaction.amount,
+        currency: transaction.currency,
+        createdAt: transaction.createdAt,
+        completedAt: transaction.completedAt
+      }
+    });
+  } catch (error) {
+    console.error('Get payment status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get payment status'
+    });
+  }
+});
+
+// POST /api/payments/refund - Request refund
+router.post('/refund', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { transactionId, reason } = req.body;
+
+    if (!transactionId || !reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Transaction ID and reason are required'
+      });
+    }
+
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .limit(1);
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found'
+      });
+    }
+
+    if (transaction.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access'
+      });
+    }
+
+    if (transaction.status !== 'COMPLETED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only completed transactions can be refunded'
+      });
+    }
+
+    // Update transaction status to refund pending
+    await db
+      .update(transactions)
+      .set({
+        status: 'REFUND_PENDING',
+        metadata: {
+          ...(transaction.metadata as any || {}),
+          refundReason: reason,
+          refundRequestedAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(transactions.id, transactionId));
+
+    // Log audit
+    await db.insert(auditLogs).values({
+      userId,
+      action: 'REFUND_REQUESTED',
+      entityType: 'TRANSACTION',
+      entityId: transactionId,
+      details: { reason, transactionRef: transaction.transactionRef }
+    });
+
+    res.json({
+      success: true,
+      message: 'Refund request submitted successfully'
+    });
+  } catch (error) {
+    console.error('Refund request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process refund request'
+    });
+  }
+});
+
 export default router;

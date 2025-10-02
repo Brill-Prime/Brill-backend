@@ -1,4 +1,3 @@
-
 import crypto from 'crypto';
 import { db } from '../db/config';
 import { transactions, orders, auditLogs, escrows } from '../db/schema';
@@ -218,7 +217,7 @@ class PaystackService {
   private static async handleSuccessfulTransfer(data: any): Promise<void> {
     try {
       const { reference } = data;
-      
+
       // Update transaction status for transfers
       const [transaction] = await db
         .select()
@@ -259,7 +258,7 @@ class PaystackService {
   private static async handleFailedTransfer(data: any): Promise<void> {
     try {
       const { reference } = data;
-      
+
       const [transaction] = await db
         .select()
         .from(transactions)
@@ -298,7 +297,7 @@ class PaystackService {
   private static async handleReversedTransfer(data: any): Promise<void> {
     try {
       const { reference } = data;
-      
+
       const [transaction] = await db
         .select()
         .from(transactions)
@@ -359,7 +358,7 @@ class PaystackService {
       });
 
       const data = await response.json() as { status: boolean; message?: string; data?: any };
-      
+
       if (!data.status) {
         throw new Error(data.message || 'Payment initialization failed');
       }
@@ -398,7 +397,7 @@ class PaystackService {
       });
 
       const result = await response.json() as { status: boolean; message?: string; data?: { recipient_code: string } };
-      
+
       if (!result.status) {
         return { success: false, error: result.message || 'Failed to create recipient' };
       }
@@ -453,7 +452,7 @@ class PaystackService {
       });
 
       const result = await response.json() as { status: boolean; message?: string; data?: any[] };
-      
+
       if (!result.status) {
         return { success: false, error: result.message || 'Failed to fetch banks' };
       }
@@ -482,7 +481,7 @@ class PaystackService {
       );
 
       const result = await response.json() as { status: boolean; message?: string; data?: { account_name: string; account_number: string } };
-      
+
       if (!result.status) {
         return { success: false, error: result.message || 'Failed to resolve account' };
       }
@@ -515,7 +514,7 @@ class PaystackService {
       );
 
       const data = await response.json() as { status: boolean; message?: string; data?: any };
-      
+
       if (!data.status) {
         throw new Error(data.message || 'Payment verification failed');
       }
@@ -524,6 +523,82 @@ class PaystackService {
     } catch (error) {
       console.error('Paystack verification error:', error);
       throw error;
+    }
+  }
+
+  // Check if service is configured
+  isConfigured(): boolean {
+    return !!this.config.secretKey && !!this.config.publicKey;
+  }
+
+  // Initialize transaction wrapper
+  async initializeTransaction(email: string, amount: number, metadata?: any) {
+    try {
+      const response = await fetch('https://api.paystack.co/transaction/initialize', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.SECRET_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          amount: Math.round(amount * 100), // Convert to kobo
+          metadata,
+          callback_url: process.env.PAYSTACK_CALLBACK_URL
+        })
+      });
+
+      const result = await response.json() as { status: boolean; message?: string; data?: any };
+
+      if (!result.status) {
+        throw new Error(result.message || 'Transaction initialization failed');
+      }
+
+      return {
+        status: true,
+        data: result.data,
+        authorization_url: result.data.authorization_url,
+        access_code: result.data.access_code,
+        reference: result.data.reference
+      };
+    } catch (error) {
+      console.error('Transaction initialization error:', error);
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  // Verify transaction wrapper
+  async verifyTransaction(reference: string) {
+    try {
+      const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
+        headers: {
+          'Authorization': `Bearer ${this.SECRET_KEY}`
+        }
+      });
+
+      const result = await response.json() as { status: boolean; message?: string; data?: any };
+
+      if (!result.status) {
+        throw new Error(result.message || 'Transaction verification failed');
+      }
+
+      return {
+        status: true,
+        data: result.data,
+        amount: result.data.amount,
+        reference: result.data.reference,
+        paid_at: result.data.paid_at,
+        customer: result.data.customer
+      };
+    } catch (error) {
+      console.error('Transaction verification error:', error);
+      return {
+        status: false,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 }
