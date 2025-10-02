@@ -38,6 +38,9 @@ import mobileHealthRoutes from './routes/mobile-health';
 import driverLocationRoutes from './routes/driver-location';
 import qrProcessingRoutes from './routes/qr-processing';
 import autoAssignmentRoutes from './routes/auto-assignment';
+import adminReportsRoutes from './routes/admin-reports';
+import adminSystemMetricsRoutes from './routes/admin-system-metrics';
+import { responseTimeMiddleware } from './services/realtime-analytics';
 
 const app = express();
 const server = createServer(app);
@@ -85,6 +88,9 @@ app.use(session({
     sameSite: 'strict'
   }
 }));
+
+// Add response time tracking middleware
+app.use(responseTimeMiddleware);
 
 // Auth routes
 app.use('/auth', authRouter);
@@ -277,6 +283,14 @@ app.use('/api/cart', cartRoutes);
 // Checkout routes
 app.use('/api/checkout', checkoutRoutes);
 
+// Register new routes
+app.use('/api/mobile/health', mobileHealthRoutes);
+app.use('/api/driver/location', driverLocationRoutes);
+app.use('/api/qr', qrProcessingRoutes);
+app.use('/api/orders/auto-assign', autoAssignmentRoutes);
+app.use('/api/admin/reports', adminReportsRoutes);
+app.use('/api/admin/system-metrics', adminSystemMetricsRoutes);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
@@ -339,21 +353,6 @@ app.get('/test-db', async (req, res) => {
   }
 });
 
-// Register new mobile routes with app
-app.use('/api', mobileHealthRoutes);
-app.use('/api/driver/location', driverLocationRoutes);
-app.use('/api/qr', qrProcessingRoutes);
-app.use('/api/assignment', autoAssignmentRoutes);
-
-// Helper function to format uptime
-function formatUptime(uptimeSeconds: number): string {
-  const hours = Math.floor(uptimeSeconds / 3600);
-  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const seconds = Math.floor(uptimeSeconds % 60);
-
-  return `${hours}h ${minutes}m ${seconds}s`;
-}
-
 // Start server
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
@@ -363,3 +362,12 @@ server.listen(PORT, '0.0.0.0', async () => {
   // Test database connection
   await testConnection();
 });
+
+// Helper function to format uptime
+function formatUptime(uptimeSeconds: number): string {
+  const hours = Math.floor(uptimeSeconds / 3600);
+  const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const seconds = Math.floor(uptimeSeconds % 60);
+
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
