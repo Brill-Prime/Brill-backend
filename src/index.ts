@@ -261,6 +261,10 @@ app.use('/api/geolocation', geolocationRouter);
 import webhookRouter from './routes/webhooks';
 app.use('/api/webhooks', webhookRouter);
 
+// Payment routes
+import paymentsRouter from './routes/payments';
+app.use('/api/payments', paymentsRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
