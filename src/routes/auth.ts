@@ -319,4 +319,272 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// Verify email with OTP
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { email, otp } = z.object({
+      email: z.string().email(),
+      otp: z.string().length(5, 'OTP must be 5 digits')
+    }).parse(req.body);
+
+    // Find user
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already verified'
+      });
+    }
+
+    // Hash the provided OTP
+    const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
+
+    // Find valid OTP token
+    const [otpToken] = await db
+      .select()
+      .from(mfaTokens)
+      .where(and(
+        eq(mfaTokens.userId, user.id),
+        eq(mfaTokens.token, hashedOtp),
+        eq(mfaTokens.method, 'EMAIL'),
+        gte(mfaTokens.expiresAt, new Date()),
+        eq(mfaTokens.isUsed, false)
+      ))
+      .limit(1);
+
+    if (!otpToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired OTP code'
+      });
+    }
+
+    // Mark user as verified
+    await db
+      .update(users)
+      .set({
+        isVerified: true,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, user.id));
+
+    // Mark OTP as used
+    await db
+      .update(mfaTokens)
+      .set({ isUsed: true, usedAt: new Date() })
+      .where(eq(mfaTokens.id, otpToken.id));
+
+    // Update session if exists
+    if (req.session?.userId === user.id) {
+      (req.session as any).user.isVerified = true;
+    }
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: true
+      }
+    });
+  } catch (error: any) {
+    console.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Email verification failed'
+    });
+  }
+});
+
+// Resend verification email
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = z.object({
+      email: z.string().email()
+    }).parse(req.body);
+
+    // Find user
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    if (!user) {
+      // Don't reveal if user exists or not
+      return res.json({
+        success: true,
+        message: 'If an unverified account exists, a new verification code has been sent.'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already verified'
+      });
+    }
+
+    // Generate new OTP
+    const otpCode = Math.floor(10000 + Math.random() * 90000).toString();
+    const hashedOtp = crypto.createHash('sha256').update(otpCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Invalidate old OTP tokens for this user
+    await db
+      .update(mfaTokens)
+      .set({ isUsed: true, usedAt: new Date() })
+      .where(and(
+        eq(mfaTokens.userId, user.id),
+        eq(mfaTokens.method, 'EMAIL'),
+        eq(mfaTokens.isUsed, false)
+      ));
+
+    // Store new OTP
+    await db
+      .insert(mfaTokens)
+      .values({
+        userId: user.id,
+        token: hashedOtp,
+        method: 'EMAIL',
+        expiresAt,
+        isUsed: false
+      });
+
+    // Send OTP email
+    try {
+      const emailSent = await sendOTPEmail(email, otpCode, user.fullName);
+      if (!emailSent) {
+        console.warn('Failed to send verification email');
+      }
+    } catch (emailError) {
+      console.error('Email service error:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: 'If an unverified account exists, a new verification code has been sent.'
+    });
+  } catch (error: any) {
+    console.error('Resend verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend verification code'
+    });
+  }
+});
+
+// Social registration (Google, Facebook, Apple, etc.)
+const socialRegisterSchema = z.object({
+  provider: z.enum(['GOOGLE', 'FACEBOOK', 'APPLE']),
+  providerUserId: z.string(),
+  email: z.string().email(),
+  fullName: z.string().min(2),
+  profilePicture: z.string().url().optional(),
+  phone: z.string().optional(),
+  role: z.enum(['CONSUMER', 'DRIVER', 'MERCHANT', 'ADMIN']).default('CONSUMER')
+});
+
+router.post('/register/social', async (req, res) => {
+  try {
+    const socialData = socialRegisterSchema.parse(req.body);
+
+    // Check if user exists with this email
+    const [existingUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, socialData.email))
+      .limit(1);
+
+    let user;
+
+    if (existingUser) {
+      // User exists - treat as login
+      user = existingUser;
+
+      // Update profile picture if provided and not set
+      if (socialData.profilePicture && !user.profilePicture) {
+        await db
+          .update(users)
+          .set({
+            profilePicture: socialData.profilePicture,
+            updatedAt: new Date()
+          })
+          .where(eq(users.id, user.id));
+
+        user.profilePicture = socialData.profilePicture;
+      }
+    } else {
+      // Create new user - social accounts are auto-verified
+      const newUsers = await db
+        .insert(users)
+        .values({
+          email: socialData.email,
+          fullName: socialData.fullName,
+          phone: socialData.phone,
+          role: socialData.role,
+          profilePicture: socialData.profilePicture,
+          isVerified: true, // Social accounts are pre-verified
+          password: null, // No password for social accounts
+          createdAt: new Date()
+        })
+        .returning();
+
+      user = newUsers[0];
+    }
+
+    // Create session
+    (req.session as any).userId = user.id;
+    (req.session as any).user = {
+      id: user.id,
+      userId: user.id.toString(),
+      email: user.email,
+      fullName: user.fullName ?? '',
+      role: user.role ?? '',
+      isVerified: user.isVerified || false,
+      profilePicture: user.profilePicture ?? undefined
+    };
+
+    // Generate JWT tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokenPayload = JWTService.createPayloadFromUser(user);
+    const tokens = JWTService.generateTokenPair(tokenPayload);
+
+    res.json({
+      success: true,
+      isNewUser: !existingUser,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: user.isVerified || false,
+        profilePicture: user.profilePicture
+      },
+      tokens
+    });
+  } catch (error: any) {
+    console.error('Social registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Social registration failed'
+    });
+  }
+});
+
 export default router;
