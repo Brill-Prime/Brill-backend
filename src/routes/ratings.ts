@@ -483,4 +483,145 @@ router.get('/order/:id', requireAuth, async (req, res) => {
   }
 });
 
+// PUT /api/ratings/:id - Update a rating
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const ratingId = parseInt(req.params.id);
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isNaN(ratingId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid rating ID'
+      });
+    }
+
+    const validatedData = updateRatingSchema.parse(req.body);
+
+    // Check if rating exists
+    const [existingRating] = await db
+      .select()
+      .from(ratings)
+      .where(and(
+        eq(ratings.id, ratingId),
+        isNull(ratings.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingRating) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rating not found'
+      });
+    }
+
+    // Only the customer who created the rating or admin can update it
+    if (userRole !== 'ADMIN' && existingRating.customerId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the rating creator or admin can update this rating'
+      });
+    }
+
+    const [updatedRating] = await db
+      .update(ratings)
+      .set(validatedData)
+      .where(eq(ratings.id, ratingId))
+      .returning();
+
+    // Create audit log
+    await createAuditLog(userId!, 'RATING_UPDATED', ratingId, {
+      changes: validatedData,
+      previousRating: existingRating.rating
+    });
+
+    res.json({
+      success: true,
+      message: 'Rating updated successfully',
+      data: updatedRating
+    });
+
+  } catch (error) {
+    console.error('Update rating error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update rating'
+    });
+  }
+});
+
+// DELETE /api/ratings/:id - Soft delete a rating
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const ratingId = parseInt(req.params.id);
+    const userId = req.user?.id;
+    const userRole = req.user?.role;
+
+    if (isNaN(ratingId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid rating ID'
+      });
+    }
+
+    // Check if rating exists
+    const [existingRating] = await db
+      .select()
+      .from(ratings)
+      .where(and(
+        eq(ratings.id, ratingId),
+        isNull(ratings.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingRating) {
+      return res.status(404).json({
+        success: false,
+        message: 'Rating not found'
+      });
+    }
+
+    // Only the customer who created the rating or admin can delete it
+    if (userRole !== 'ADMIN' && existingRating.customerId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the rating creator or admin can delete this rating'
+      });
+    }
+
+    await db
+      .update(ratings)
+      .set({ deletedAt: new Date() })
+      .where(eq(ratings.id, ratingId));
+
+    // Create audit log
+    await createAuditLog(userId!, 'RATING_DELETED', ratingId, {
+      rating: existingRating.rating,
+      orderId: existingRating.orderId
+    });
+
+    res.json({
+      success: true,
+      message: 'Rating deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete rating error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete rating'
+    });
+  }
+});
+
 export default router;

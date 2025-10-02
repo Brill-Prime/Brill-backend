@@ -368,4 +368,65 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// DELETE /api/moderation-responses/:id - Soft delete moderation response (Admin only)
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const responseId = parseInt(req.params.id);
+    const user = req.user!;
+
+    if (isNaN(responseId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid response ID'
+      });
+    }
+
+    // Check if response exists
+    const existingResponse = await db
+      .select()
+      .from(moderationResponses)
+      .where(and(
+        eq(moderationResponses.id, responseId),
+        isNull(moderationResponses.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingResponse.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Moderation response not found'
+      });
+    }
+
+    // Perform soft delete
+    await db
+      .update(moderationResponses)
+      .set({ deletedAt: new Date() })
+      .where(eq(moderationResponses.id, responseId));
+
+    // Log audit activity
+    await logAuditActivity(
+      user.id,
+      'MODERATION_RESPONSE_DELETED',
+      'MODERATION_RESPONSE',
+      responseId,
+      {
+        reportId: existingResponse[0].reportId,
+        action: existingResponse[0].action
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'Moderation response deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete moderation response error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete moderation response'
+    });
+  }
+});
+
 export default router;

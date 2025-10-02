@@ -605,4 +605,63 @@ router.post('/:id/cancel', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/fuel-orders/:id - Soft delete fuel order (Admin only)
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const fuelOrderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    
+    if (isNaN(fuelOrderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid fuel order ID'
+      });
+    }
+
+    // Check if fuel order exists
+    const existingFuelOrder = await db
+      .select()
+      .from(fuelOrders)
+      .where(and(
+        eq(fuelOrders.id, fuelOrderId),
+        isNull(fuelOrders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingFuelOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Fuel order not found'
+      });
+    }
+
+    const fuelOrder = existingFuelOrder[0];
+
+    // Perform soft delete
+    await db
+      .update(fuelOrders)
+      .set({ deletedAt: new Date() })
+      .where(eq(fuelOrders.id, fuelOrderId));
+
+    // Log audit event
+    await logAuditEvent(
+      currentUser.id,
+      'FUEL_ORDER_DELETED',
+      fuelOrderId,
+      { stationId: fuelOrder.stationId, status: fuelOrder.status }
+    );
+
+    res.json({
+      success: true,
+      message: 'Fuel order deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete fuel order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete fuel order'
+    });
+  }
+});
+
 export default router;
