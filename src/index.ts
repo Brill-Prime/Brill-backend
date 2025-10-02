@@ -283,6 +283,10 @@ app.use('/api/checkout', checkoutRoutes);
 // Bank accounts management routes
 app.use('/api/bank-accounts', bankAccountsRouter);
 
+// Paystack webhook routes
+import paystackWebhooksRouter from './routes/paystack-webhooks';
+app.use('/api/paystack', paystackWebhooksRouter);
+
 // Register new routes
 app.use('/api/mobile/health', mobileHealthRoutes);
 app.use('/api/driver/location', driverLocationRoutes);

@@ -1,8 +1,8 @@
 
 import crypto from 'crypto';
 import { db } from '../db/config';
-import { transactions, orders, auditLogs } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { transactions, orders, auditLogs, escrows } from '../db/schema';
+import { eq, and, isNull } from 'drizzle-orm';
 
 interface PaystackWebhookEvent {
   event: string;
@@ -103,15 +103,46 @@ class PaystackService {
         .where(eq(transactions.id, transaction.id))
         .returning();
 
-      // Update associated order if exists
+      // Update associated order and create escrow if exists
       if (transaction.orderId) {
-        await db
-          .update(orders)
-          .set({
-            status: 'CONFIRMED',
-            updatedAt: new Date()
-          })
-          .where(eq(orders.id, transaction.orderId));
+        const [order] = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.id, transaction.orderId))
+          .limit(1);
+
+        if (order) {
+          await db
+            .update(orders)
+            .set({
+              status: 'CONFIRMED',
+              updatedAt: new Date()
+            })
+            .where(eq(orders.id, transaction.orderId));
+
+          // Create escrow to hold funds
+          const existingEscrow = await db
+            .select()
+            .from(escrows)
+            .where(and(
+              eq(escrows.orderId, order.id),
+              isNull(escrows.deletedAt)
+            ))
+            .limit(1);
+
+          if (!existingEscrow.length) {
+            await db.insert(escrows).values({
+              orderId: order.id,
+              payerId: order.customerId,
+              payeeId: order.merchantId!,
+              amount: transaction.amount,
+              status: 'HELD',
+              paystackEscrowId: data.reference,
+              transactionRef: transaction.transactionRef,
+              createdAt: new Date()
+            });
+          }
+        }
       }
 
       // Log audit event
@@ -186,8 +217,38 @@ class PaystackService {
   // Handle successful transfer
   private static async handleSuccessfulTransfer(data: any): Promise<void> {
     try {
-      // Handle transfer success logic here
-      console.log('Transfer successful:', data);
+      const { reference } = data;
+      
+      // Update transaction status for transfers
+      const [transaction] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.transactionRef, reference))
+        .limit(1);
+
+      if (transaction) {
+        await db
+          .update(transactions)
+          .set({
+            status: 'COMPLETED',
+            completedAt: new Date()
+          })
+          .where(eq(transactions.id, transaction.id));
+
+        // Log audit event
+        await db.insert(auditLogs).values({
+          userId: transaction.userId,
+          action: 'TRANSFER_SUCCESS',
+          entityType: 'TRANSACTION',
+          entityId: transaction.id,
+          details: {
+            reference: data.reference,
+            transferCode: data.transfer_code
+          }
+        });
+      }
+
+      console.log('Transfer successful:', reference);
     } catch (error) {
       console.error('Error handling successful transfer:', error);
       throw error;
@@ -197,8 +258,36 @@ class PaystackService {
   // Handle failed transfer
   private static async handleFailedTransfer(data: any): Promise<void> {
     try {
-      // Handle transfer failure logic here
-      console.log('Transfer failed:', data);
+      const { reference } = data;
+      
+      const [transaction] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.transactionRef, reference))
+        .limit(1);
+
+      if (transaction) {
+        await db
+          .update(transactions)
+          .set({
+            status: 'FAILED'
+          })
+          .where(eq(transactions.id, transaction.id));
+
+        // Log audit event
+        await db.insert(auditLogs).values({
+          userId: transaction.userId,
+          action: 'TRANSFER_FAILED',
+          entityType: 'TRANSACTION',
+          entityId: transaction.id,
+          details: {
+            reference: data.reference,
+            reason: data.message
+          }
+        });
+      }
+
+      console.log('Transfer failed:', reference);
     } catch (error) {
       console.error('Error handling failed transfer:', error);
       throw error;
@@ -208,8 +297,35 @@ class PaystackService {
   // Handle reversed transfer
   private static async handleReversedTransfer(data: any): Promise<void> {
     try {
-      // Handle transfer reversal logic here
-      console.log('Transfer reversed:', data);
+      const { reference } = data;
+      
+      const [transaction] = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.transactionRef, reference))
+        .limit(1);
+
+      if (transaction) {
+        await db
+          .update(transactions)
+          .set({
+            status: 'REFUNDED'
+          })
+          .where(eq(transactions.id, transaction.id));
+
+        // Log audit event
+        await db.insert(auditLogs).values({
+          userId: transaction.userId,
+          action: 'TRANSFER_REVERSED',
+          entityType: 'TRANSACTION',
+          entityId: transaction.id,
+          details: {
+            reference: data.reference
+          }
+        });
+      }
+
+      console.log('Transfer reversed:', reference);
     } catch (error) {
       console.error('Error handling reversed transfer:', error);
       throw error;

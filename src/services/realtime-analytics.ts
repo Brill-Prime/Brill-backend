@@ -56,7 +56,7 @@ export class RealTimeAnalytics extends EventEmitter {
       const [activeOrdersCount, recentTransactionsCount] = await Promise.all([
         db.select({ count: count() })
           .from(orders)
-          .where(eq(orders.status, 'pending')),
+          .where(eq(orders.status, 'PENDING')),
         
         db.select({ count: count() })
           .from(transactions)

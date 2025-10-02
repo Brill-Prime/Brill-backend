@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { cartItems, products, orders, orderItems, transactions, users } from '../db/schema';
@@ -182,13 +181,11 @@ router.post('/', requireAuth, async (req, res) => {
     const serviceFee = subtotal * 0.05;
     const totalAmount = subtotal + deliveryFee + serviceFee;
 
-    // Wallet payment removed - all payments go through Paystack
-
     // Generate unique order number
     let orderNumber: string;
     let isUnique = false;
     let attempts = 0;
-    
+
     do {
       orderNumber = generateOrderNumber();
       const existingOrder = await db
@@ -196,7 +193,7 @@ router.post('/', requireAuth, async (req, res) => {
         .from(orders)
         .where(eq(orders.orderNumber, orderNumber))
         .limit(1);
-      
+
       isUnique = existingOrder.length === 0;
       attempts++;
     } while (!isUnique && attempts < 10);
@@ -213,12 +210,12 @@ router.post('/', requireAuth, async (req, res) => {
 
     // Create orders (one per merchant)
     const createdOrders = [];
-    
+
     for (const [merchantId, items] of Object.entries(merchantGroups) as Array<[string, any[]]>) {
-      const merchantSubtotal = items.reduce((sum, item) => 
+      const merchantSubtotal = items.reduce((sum, item) =>
         sum + (Number(item.product.price) * item.quantity), 0
       );
-      
+
       const merchantTotal = merchantSubtotal + (deliveryFee / Object.keys(merchantGroups).length);
 
       const newOrder = await db.insert(orders).values({
@@ -314,7 +311,7 @@ router.post('/', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Checkout error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -322,7 +319,7 @@ router.post('/', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to complete checkout'
