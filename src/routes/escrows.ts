@@ -267,6 +267,14 @@ router.post('/delivery/confirm', requireAuth, async (req, res) => {
       });
     }
 
+    // Update order with confirmation deadline (48 hours from now)
+    await db
+      .update(orders)
+      .set({
+        confirmationDeadline: new Date(Date.now() + 48 * 60 * 60 * 1000)
+      })
+      .where(eq(orders.id, orderId));
+
     await logAuditEvent(
       currentUser.id,
       'DELIVERY_CONFIRMED',

@@ -42,6 +42,35 @@ import adminReportsRoutes from './routes/admin-reports';
 import adminSystemMetricsRoutes from './routes/admin-system-metrics';
 import { responseTimeMiddleware } from './services/realtime-analytics';
 import bankAccountsRouter from './routes/bank-accounts';
+import supportTicketMessagesRouter from './routes/support-ticket-messages';
+import notificationsRouter from './routes/notifications';
+import identityVerificationsRouter from './routes/identity-verifications';
+import errorLogsRouter from './routes/error-logs';
+import mfaTokensRouter from './routes/mfa-tokens';
+import jwtTokensRouter from './routes/jwt-tokens';
+import passwordResetRouter from './routes/password-reset';
+import verificationDocumentsRouter from './routes/verification-documents';
+import securityLogsRouter from './routes/security-logs';
+import trustedDevicesRouter from './routes/trusted-devices';
+import tollGatesRouter from './routes/toll-gates';
+import suspiciousActivitiesRouter from './routes/suspicious-activities';
+import adminUsersRouter from './routes/admin-users';
+import realtimeExamplesRouter from './routes/realtime-examples';
+import pushNotificationsRouter from './routes/push-notifications';
+import analyticsRouter from './routes/analytics';
+import adminDashboardRouter from './routes/admin-dashboard';
+import configRouter from './routes/config';
+import healthRouter from './routes/health';
+import driverVerificationRouter from './routes/driver-verification';
+import deliveryAssignmentsRouter from './routes/delivery-assignments';
+import searchRouter from './routes/search';
+import uploadRouter from './routes/upload';
+import geolocationRouter from './routes/geolocation';
+import webhookRouter from './routes/webhooks';
+import paymentsRouter from './routes/payments';
+import paystackWebhooksRouter from './routes/paystack-webhooks';
+import escrowStatusRoutes from './routes/escrow-status';
+import { startEscrowAutoReleaseService } from './services/escrow-auto-release';
 
 const app = express();
 const server = createServer(app);
@@ -130,7 +159,6 @@ app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 app.use('/api/support-tickets', supportTicketsRouter);
 
 // Support ticket messages management routes
-import supportTicketMessagesRouter from './routes/support-ticket-messages';
 app.use('/api/support-ticket-messages', supportTicketMessagesRouter);
 
 // Audit logs management routes
@@ -146,51 +174,39 @@ app.use('/api/fraud-alerts', fraudAlertsRouter);
 app.use('/api/messages', messagesRouter);
 
 // Notifications management routes
-import notificationsRouter from './routes/notifications';
 app.use('/api/notifications', notificationsRouter);
 
 // Identity verifications management routes
-import identityVerificationsRouter from './routes/identity-verifications';
 app.use('/api/identity-verifications', identityVerificationsRouter);
 
 // Error logs management routes
-import errorLogsRouter from './routes/error-logs';
 app.use('/api/error-logs', errorLogsRouter);
 
 // MFA tokens management routes
-import mfaTokensRouter from './routes/mfa-tokens';
 app.use('/api/mfa-tokens', mfaTokensRouter);
 
 // JWT tokens management routes
-import jwtTokensRouter from './routes/jwt-tokens';
 app.use('/api/jwt-tokens', jwtTokensRouter);
 
 // Password reset routes
-import passwordResetRouter from './routes/password-reset';
 app.use('/api/password-reset', passwordResetRouter);
 
 // Verification documents management routes
-import verificationDocumentsRouter from './routes/verification-documents';
 app.use('/api/verification-documents', verificationDocumentsRouter);
 
 // Security logs management routes
-import securityLogsRouter from './routes/security-logs';
 app.use('/api/security-logs', securityLogsRouter);
 
 // Trusted devices management routes
-import trustedDevicesRouter from './routes/trusted-devices';
 app.use('/api/trusted-devices', trustedDevicesRouter);
 
 // Toll gates management routes
-import tollGatesRouter from './routes/toll-gates';
 app.use('/api/toll-gates', tollGatesRouter);
 
 // Suspicious activities management routes
-import suspiciousActivitiesRouter from './routes/suspicious-activities';
 app.use('/api/suspicious-activities', suspiciousActivitiesRouter);
 
 // Admin users management routes
-import adminUsersRouter from './routes/admin-users';
 app.use('/api/admin-users', adminUsersRouter);
 
 // Content reports management routes
@@ -218,27 +234,21 @@ app.use('/api/web', webRoutes);
 app.use('/api/realtime', realtimeRouter);
 
 // Real-time examples and integration guide
-import realtimeExamplesRouter from './routes/realtime-examples';
 app.use('/api/realtime-examples', realtimeExamplesRouter);
 
 // Push notifications routes
-import pushNotificationsRouter from './routes/push-notifications';
 app.use('/api/push-notifications', pushNotificationsRouter);
 
 // Analytics routes
-import analyticsRouter from './routes/analytics';
 app.use('/api/analytics', analyticsRouter);
 
 // Admin dashboard routes
-import adminDashboardRouter from './routes/admin-dashboard';
 app.use('/api/admin-dashboard', adminDashboardRouter);
 
 // Configuration routes
-import configRouter from './routes/config';
 app.use('/api/config', configRouter);
 
 // Health check routes
-import healthRouter from './routes/health';
 app.use('/api/health', healthRouter);
 
 // Apply rate limiting to auth routes
@@ -247,31 +257,24 @@ app.use('/auth', RateLimitingService.authLimit);
 app.use('/api', RateLimitingService.apiLimit);
 
 // Driver verification routes
-import driverVerificationRouter from './routes/driver-verification';
 app.use('/api/driver-verification', driverVerificationRouter);
 
 // Delivery assignment routes
-import deliveryAssignmentsRouter from './routes/delivery-assignments';
 app.use('/api/delivery-assignments', deliveryAssignmentsRouter);
 
 // Search routes
-import searchRouter from './routes/search';
 app.use('/api/search', searchRouter);
 
 // File upload routes
-import uploadRouter from './routes/upload';
 app.use('/api/upload', uploadRouter);
 
 // Geolocation routes
-import geolocationRouter from './routes/geolocation';
 app.use('/api/geolocation', geolocationRouter);
 
 // Webhook routes
-import webhookRouter from './routes/webhooks';
 app.use('/api/webhooks', webhookRouter);
 
 // Payment routes
-import paymentsRouter from './routes/payments';
 app.use('/api/payments', paymentsRouter);
 
 // Cart routes
@@ -284,7 +287,6 @@ app.use('/api/checkout', checkoutRoutes);
 app.use('/api/bank-accounts', bankAccountsRouter);
 
 // Paystack webhook routes
-import paystackWebhooksRouter from './routes/paystack-webhooks';
 app.use('/api/paystack', paystackWebhooksRouter);
 
 // Register new routes
@@ -294,6 +296,9 @@ app.use('/api/qr', qrProcessingRoutes);
 app.use('/api/orders/auto-assign', autoAssignmentRoutes);
 app.use('/api/admin/reports', adminReportsRoutes);
 app.use('/api/admin/system-metrics', adminSystemMetricsRoutes);
+
+// Register escrow status route
+app.use('/api/escrow-status', escrowStatusRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
@@ -356,6 +361,9 @@ app.get('/test-db', async (req, res) => {
     });
   }
 });
+
+// Start escrow auto-release service
+startEscrowAutoReleaseService();
 
 // Start server
 server.listen(PORT, '0.0.0.0', async () => {
