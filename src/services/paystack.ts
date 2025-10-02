@@ -96,7 +96,7 @@ class PaystackService {
           paystackTransactionId: data.id.toString(),
           completedAt: new Date(data.paid_at || data.created_at),
           metadata: {
-            ...metadata,
+            ...(typeof metadata === 'object' && metadata !== null ? metadata : {}),
             paystack: data
           } as any
         })
@@ -156,7 +156,7 @@ class PaystackService {
           paymentGatewayRef: data.reference,
           paystackTransactionId: data.id.toString(),
           metadata: {
-            ...metadata,
+            ...(typeof metadata === 'object' && metadata !== null ? metadata : {}),
             paystack: data,
             failureReason: data.gateway_response
           } as any
@@ -242,7 +242,7 @@ class PaystackService {
         }),
       });
 
-      const data: any = await response.json();
+      const data = await response.json() as { status: boolean; message?: string; data?: any };
       
       if (!data.status) {
         throw new Error(data.message || 'Payment initialization failed');
@@ -252,6 +252,133 @@ class PaystackService {
     } catch (error) {
       console.error('Paystack initialization error:', error);
       throw error;
+    }
+  }
+
+  // Create transfer recipient
+  static async createTransferRecipient(data: {
+    type: string;
+    name: string;
+    account_number: string;
+    bank_code: string;
+    currency?: string;
+    description?: string;
+  }): Promise<{ success: boolean; recipient_code?: string; error?: string }> {
+    try {
+      if (!this.SECRET_KEY) {
+        throw new Error('Paystack secret key not configured');
+      }
+
+      const response = await fetch('https://api.paystack.co/transferrecipient', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...data,
+          currency: data.currency || 'NGN'
+        }),
+      });
+
+      const result = await response.json() as { status: boolean; message?: string; data?: { recipient_code: string } };
+      
+      if (!result.status) {
+        return { success: false, error: result.message || 'Failed to create recipient' };
+      }
+
+      return { success: true, recipient_code: result.data?.recipient_code };
+    } catch (error) {
+      console.error('Create recipient error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Initiate transfer
+  static async initiateTransfer(data: {
+    source: string;
+    amount: number;
+    recipient: string;
+    reason?: string;
+    reference?: string;
+  }): Promise<{ status: boolean; message?: string; data?: any }> {
+    try {
+      if (!this.SECRET_KEY) {
+        throw new Error('Paystack secret key not configured');
+      }
+
+      const response = await fetch('https://api.paystack.co/transfer', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      return await response.json() as { status: boolean; message?: string; data?: any };
+    } catch (error) {
+      console.error('Initiate transfer error:', error);
+      return { status: false, message: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Get banks
+  static async getBanks(country: string = 'nigeria'): Promise<{ success: boolean; data?: any[]; error?: string }> {
+    try {
+      if (!this.SECRET_KEY) {
+        throw new Error('Paystack secret key not configured');
+      }
+
+      const response = await fetch(`https://api.paystack.co/bank?country=${country}`, {
+        headers: {
+          Authorization: `Bearer ${this.SECRET_KEY}`,
+        },
+      });
+
+      const result = await response.json() as { status: boolean; message?: string; data?: any[] };
+      
+      if (!result.status) {
+        return { success: false, error: result.message || 'Failed to fetch banks' };
+      }
+
+      return { success: true, data: result.data };
+    } catch (error) {
+      console.error('Get banks error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  // Resolve account number
+  static async resolveAccountNumber(accountNumber: string, bankCode: string): Promise<{ success: boolean; account_name?: string; account_number?: string; error?: string }> {
+    try {
+      if (!this.SECRET_KEY) {
+        throw new Error('Paystack secret key not configured');
+      }
+
+      const response = await fetch(
+        `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+        {
+          headers: {
+            Authorization: `Bearer ${this.SECRET_KEY}`,
+          },
+        }
+      );
+
+      const result = await response.json() as { status: boolean; message?: string; data?: { account_name: string; account_number: string } };
+      
+      if (!result.status) {
+        return { success: false, error: result.message || 'Failed to resolve account' };
+      }
+
+      return { 
+        success: true, 
+        account_name: result.data?.account_name,
+        account_number: result.data?.account_number
+      };
+    } catch (error) {
+      console.error('Resolve account error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
@@ -271,7 +398,7 @@ class PaystackService {
         }
       );
 
-      const data: any = await response.json();
+      const data = await response.json() as { status: boolean; message?: string; data?: any };
       
       if (!data.status) {
         throw new Error(data.message || 'Payment verification failed');

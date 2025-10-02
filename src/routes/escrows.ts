@@ -13,7 +13,7 @@ const createEscrowSchema = z.object({
   amount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Amount must be a positive number"
   }),
-  paystackReference: z.string().optional(),
+  paystackReference: z.string().min(1),
   merchantAmount: z.string().refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
     message: "Merchant amount must be a positive number"
   }),

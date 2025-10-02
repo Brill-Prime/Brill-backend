@@ -96,13 +96,6 @@ router.get('/preview', requireAuth, async (req, res) => {
     const serviceFee = subtotal * 0.05; // 5% service fee
     const total = subtotal + deliveryFee + serviceFee;
 
-    // Get user's wallet balance
-    const userWallet = await db
-      .select()
-      .from(users)
-      .where(eq(users.id, currentUser.id))
-      .limit(1);
-
     res.json({
       success: true,
       data: {
@@ -113,7 +106,6 @@ router.get('/preview', requireAuth, async (req, res) => {
           serviceFee: serviceFee.toFixed(2),
           total: total.toFixed(2)
         },
-        walletBalance: userWallet[0]?.walletBalance || '0.00',
         itemCount: items.length,
         totalQuantity: cart.reduce((sum, item) => sum + item.quantity, 0)
       }
@@ -190,22 +182,7 @@ router.post('/', requireAuth, async (req, res) => {
     const serviceFee = subtotal * 0.05;
     const totalAmount = subtotal + deliveryFee + serviceFee;
 
-    // Handle wallet payment if requested
-    if (validatedData.useWalletBalance) {
-      const userWallet = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, currentUser.id))
-        .limit(1);
-
-      const walletBalance = Number(userWallet[0]?.walletBalance || 0);
-      if (walletBalance < totalAmount) {
-        return res.status(400).json({
-          success: false,
-          message: 'Insufficient wallet balance'
-        });
-      }
-    }
+    // Wallet payment removed - all payments go through Paystack
 
     // Generate unique order number
     let orderNumber: string;
@@ -284,30 +261,34 @@ router.post('/', requireAuth, async (req, res) => {
       createdOrders.push(newOrder[0]);
     }
 
+    // Initialize Paystack payment
+    const PaystackService = (await import('../services/paystack')).default;
+    const paymentInit = await PaystackService.initializePayment(
+      currentUser.email,
+      totalAmount,
+      `${orderNumber}_${Date.now()}`,
+      {
+        orderIds: createdOrders.map(o => o.id),
+        orderNumber,
+        customerId: currentUser.id
+      }
+    );
+
     // Create transaction record
-    await db.insert(transactions).values({
+    const [transaction] = await db.insert(transactions).values({
       userId: currentUser.id,
       amount: totalAmount.toFixed(2),
       type: 'PAYMENT',
-      status: validatedData.paymentMethod === 'WALLET' ? 'COMPLETED' : 'PENDING',
+      status: 'PENDING',
       paymentMethod: validatedData.paymentMethod,
+      transactionRef: paymentInit.reference,
+      paystackTransactionId: paymentInit.reference,
       description: `Order payment for ${orderNumber}`,
       metadata: {
         orderIds: createdOrders.map(o => o.id),
         orderNumber
       }
-    });
-
-    // Deduct from wallet if using wallet balance
-    if (validatedData.useWalletBalance && validatedData.paymentMethod === 'WALLET') {
-      await db
-        .update(users)
-        .set({
-          walletBalance: sql`wallet_balance - ${totalAmount}`,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, currentUser.id));
-    }
+    }).returning();
 
     // Clear cart
     await db
@@ -326,7 +307,9 @@ router.post('/', requireAuth, async (req, res) => {
         orderNumber,
         totalAmount: totalAmount.toFixed(2),
         paymentMethod: validatedData.paymentMethod,
-        status: validatedData.paymentMethod === 'WALLET' ? 'PAID' : 'PENDING_PAYMENT'
+        status: 'PENDING_PAYMENT',
+        paymentUrl: paymentInit.authorization_url,
+        paymentReference: paymentInit.reference
       }
     });
   } catch (error) {

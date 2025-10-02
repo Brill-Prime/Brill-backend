@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { users, orders, transactions } from '../db/schema';
@@ -66,7 +65,7 @@ router.get('/financial', requireAuth, requireAdmin, async (req, res) => {
 router.get('/user-growth', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { period = '30d' } = req.query;
-    
+
     const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
