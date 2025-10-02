@@ -1,0 +1,39 @@
+1. Order Creation & Management
+	•	POST /orders → Create a new order (consumer → merchant, items, delivery details, escrow hold)
+	•	GET /orders/:id → Get order details
+	•	GET /orders → List all orders for current user (consumer, merchant, or driver)
+	•	PUT /orders/:id → Update order (before it’s accepted)
+	•	DELETE /orders/:id → Cancel order (only if not yet accepted/paid)
+
+2. Order Status Updates
+	•	POST /orders/:id/accept → Merchant accepts order
+	•	POST /orders/:id/reject → Merchant rejects order
+	•	POST /orders/:id/assign-driver → Assign a driver (auto or manual)
+	•	POST /orders/:id/mark-ready → Merchant marks order as ready for pickup
+	•	POST /orders/:id/mark-delivered → Driver marks delivery as successful
+	•	POST /orders/:id/confirm-delivery → Consumer confirms delivery
+	•	POST /orders/:id/complete → System/admin marks order completed & triggers escrow release
+
+3. Escrow & Payment Flow
+	•	POST /orders/:id/pay → Consumer pays (funds go into escrow)
+	•	POST /orders/:id/release-payment → Auto/manual escrow release (to merchant + driver)
+	•	POST /orders/:id/dispute → Raise a dispute (consumer/driver/merchant)
+	•	POST /orders/:id/refund → Refund (admin/manual decision)
+
+4. Tracking & Notifications
+	•	GET /orders/:id/tracking → Track driver location & delivery status
+	•	POST /orders/:id/notify → Send update/notification to consumer or driver
+	•	GET /orders/active → Get all active (in-progress) orders
+
+5. Driver Operations
+	•	GET /driver/orders → Get driver’s assigned orders
+	•	POST /driver/orders/:id/accept → Driver accepts assigned delivery
+	•	POST /driver/orders/:id/reject → Driver rejects delivery
+	•	POST /driver/orders/:id/update-location → Update driver’s live location
+	•	POST /driver/orders/:id/mark-delivered → Mark delivery as complete
+
+6. Admin-Specific (Order Oversight)
+	•	GET /admin/orders → List all orders in system
+	•	GET /admin/orders/:id → View specific order (with full details)
+	•	POST /admin/orders/:id/force-complete → Admin forces completion & releases escrow
+	•	POST /admin/orders/:id/resolve-dispute → Resolve disputes (release funds, refund, or partial release)

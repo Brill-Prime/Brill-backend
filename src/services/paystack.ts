@@ -526,18 +526,13 @@ class PaystackService {
     }
   }
 
-  // Check if service is configured
-  isConfigured(): boolean {
-    return !!this.config.secretKey && !!this.config.publicKey;
-  }
-
   // Initialize transaction wrapper
-  async initializeTransaction(email: string, amount: number, metadata?: any) {
+  static async initializeTransaction(email: string, amount: number, metadata?: any) {
     try {
       const response = await fetch('https://api.paystack.co/transaction/initialize', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.SECRET_KEY}`,
+          'Authorization': `Bearer ${PaystackService.SECRET_KEY}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -571,11 +566,11 @@ class PaystackService {
   }
 
   // Verify transaction wrapper
-  async verifyTransaction(reference: string) {
+  static async verifyTransaction(reference: string) {
     try {
       const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
         headers: {
-          'Authorization': `Bearer ${this.SECRET_KEY}`
+          'Authorization': `Bearer ${PaystackService.SECRET_KEY}`
         }
       });
 

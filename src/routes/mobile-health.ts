@@ -93,19 +93,19 @@ router.get('/mobile/config', async (req, res) => {
 // Mobile database integration verification
 router.get('/mobile/database-status', async (req, res) => {
   try {
-    const [userCount] = await db.execute('SELECT COUNT(*) as count FROM users');
-    const [orderCount] = await db.execute('SELECT COUNT(*) as count FROM orders');
-    const [transactionCount] = await db.execute('SELECT COUNT(*) as count FROM transactions');
-    const [productCount] = await db.execute('SELECT COUNT(*) as count FROM products');
+    const userCount: any = await db.execute('SELECT COUNT(*) as count FROM users');
+    const orderCount: any = await db.execute('SELECT COUNT(*) as count FROM orders');
+    const transactionCount: any = await db.execute('SELECT COUNT(*) as count FROM transactions');
+    const productCount: any = await db.execute('SELECT COUNT(*) as count FROM products');
 
     const dbStatus = {
       connected: true,
       sharedWithWebApp: true,
       tables: {
-        users: userCount.rows[0]?.count || 0,
-        orders: orderCount.rows[0]?.count || 0,
-        transactions: transactionCount.rows[0]?.count || 0,
-        products: productCount.rows[0]?.count || 0
+        users: userCount.rows?.[0]?.count || 0,
+        orders: orderCount.rows?.[0]?.count || 0,
+        transactions: transactionCount.rows?.[0]?.count || 0,
+        products: productCount.rows?.[0]?.count || 0
       },
       schemaVersion: '1.0.0',
       timestamp: new Date().toISOString()

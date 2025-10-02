@@ -319,7 +319,7 @@ router.post('/process-payment', requireAuth, async (req, res) => {
     // Get user email for Paystack
     const PaystackService = (await import('../services/paystack')).default;
     const userResult = await fetch(`${process.env.API_BASE_URL || 'http://0.0.0.0:5000'}/api/users/${userId}`);
-    const userData = await userResult.json();
+    const userData = await userResult.json() as any;
 
     if (!userData.success) {
       return res.status(400).json({

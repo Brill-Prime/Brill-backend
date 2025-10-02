@@ -94,8 +94,7 @@ router.get('/verify/:reference', requireAuth, async (req, res) => {
       await db
         .update(transactions)
         .set({
-          status: 'COMPLETED',
-          updatedAt: new Date()
+          status: 'COMPLETED'
         })
         .where(eq(transactions.paystackTransactionId, reference));
 
@@ -242,13 +241,12 @@ router.post('/refund', requireAuth, async (req, res) => {
     await db
       .update(transactions)
       .set({
-        status: 'REFUND_PENDING',
+        status: 'REFUNDED',
         metadata: {
           ...(transaction.metadata as any || {}),
           refundReason: reason,
           refundRequestedAt: new Date().toISOString()
-        },
-        updatedAt: new Date()
+        }
       })
       .where(eq(transactions.id, transactionId));
 
