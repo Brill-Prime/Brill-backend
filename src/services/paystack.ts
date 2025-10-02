@@ -98,7 +98,7 @@ class PaystackService {
           metadata: {
             ...metadata,
             paystack: data
-          }
+          } as any
         })
         .where(eq(transactions.id, transaction.id))
         .returning();
@@ -159,7 +159,7 @@ class PaystackService {
             ...metadata,
             paystack: data,
             failureReason: data.gateway_response
-          }
+          } as any
         })
         .where(eq(transactions.id, transaction.id));
 
@@ -242,7 +242,7 @@ class PaystackService {
         }),
       });
 
-      const data = await response.json() as { status: boolean; message?: string; data?: any };
+      const data: any = await response.json();
       
       if (!data.status) {
         throw new Error(data.message || 'Payment initialization failed');
@@ -271,7 +271,7 @@ class PaystackService {
         }
       );
 
-      const data = await response.json() as { status: boolean; message?: string; data?: any };
+      const data: any = await response.json();
       
       if (!data.status) {
         throw new Error(data.message || 'Payment verification failed');

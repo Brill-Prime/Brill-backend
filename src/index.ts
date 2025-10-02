@@ -41,6 +41,7 @@ import autoAssignmentRoutes from './routes/auto-assignment';
 import adminReportsRoutes from './routes/admin-reports';
 import adminSystemMetricsRoutes from './routes/admin-system-metrics';
 import { responseTimeMiddleware } from './services/realtime-analytics';
+import bankAccountsRouter from './routes/bank-accounts';
 
 const app = express();
 const server = createServer(app);
@@ -278,6 +279,9 @@ app.use('/api/cart', cartRoutes);
 
 // Checkout routes
 app.use('/api/checkout', checkoutRoutes);
+
+// Bank accounts management routes
+app.use('/api/bank-accounts', bankAccountsRouter);
 
 // Register new routes
 app.use('/api/mobile/health', mobileHealthRoutes);

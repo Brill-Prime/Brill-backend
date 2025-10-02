@@ -558,7 +558,65 @@ async function releaseEscrowFunds(orderId: number, releasedBy: number, isAdmin: 
       return { success: false, message: 'Order not found' };
     }
 
-    // Release to merchant
+    // Get merchant details for payout
+    const merchant = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, order[0].merchantId!))
+      .limit(1);
+
+    // Get driver details for payout
+    const driver = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, order[0].driverId!))
+      .limit(1);
+
+    // Initiate Paystack transfer to merchant if they have bank account
+    let merchantTransferStatus = 'PENDING';
+    if (merchant[0]?.paystackRecipientCode) {
+      try {
+        const PaystackService = (await import('../services/paystack')).default;
+        const transferResult = await PaystackService.initiateTransfer({
+          source: 'balance',
+          amount: parseFloat(merchantAmount) * 100, // Convert to kobo
+          recipient: merchant[0].paystackRecipientCode,
+          reason: `Payment for order ${order[0].orderNumber}`,
+          reference: `MERCHANT_${escrow[0].transactionRef}`
+        });
+
+        if (transferResult.status) {
+          merchantTransferStatus = 'COMPLETED';
+        }
+      } catch (error) {
+        console.error('Merchant transfer failed:', error);
+        merchantTransferStatus = 'FAILED';
+      }
+    }
+
+    // Initiate Paystack transfer to driver if they have bank account
+    let driverTransferStatus = 'PENDING';
+    if (driver[0]?.paystackRecipientCode) {
+      try {
+        const PaystackService = (await import('../services/paystack')).default;
+        const transferResult = await PaystackService.initiateTransfer({
+          source: 'balance',
+          amount: parseFloat(driverAmount) * 100, // Convert to kobo
+          recipient: driver[0].paystackRecipientCode,
+          reason: `Delivery fee for order ${order[0].orderNumber}`,
+          reference: `DRIVER_${escrow[0].transactionRef}`
+        });
+
+        if (transferResult.status) {
+          driverTransferStatus = 'COMPLETED';
+        }
+      } catch (error) {
+        console.error('Driver transfer failed:', error);
+        driverTransferStatus = 'FAILED';
+      }
+    }
+
+    // Record merchant transaction
     await db.insert(transactions).values({
       userId: order[0].merchantId!,
       orderId,
@@ -566,14 +624,14 @@ async function releaseEscrowFunds(orderId: number, releasedBy: number, isAdmin: 
       netAmount: merchantAmount,
       currency: 'NGN',
       type: 'ESCROW_RELEASE',
-      status: 'COMPLETED',
+      status: merchantTransferStatus as any,
       transactionRef: `MERCHANT_${escrow[0].transactionRef}`,
       description: `Payment for order ${order[0].orderNumber}`,
-      completedAt: new Date(),
+      completedAt: merchantTransferStatus === 'COMPLETED' ? new Date() : null,
       createdAt: new Date()
     });
 
-    // Release to driver
+    // Record driver transaction
     await db.insert(transactions).values({
       userId: order[0].driverId!,
       orderId,
@@ -581,10 +639,10 @@ async function releaseEscrowFunds(orderId: number, releasedBy: number, isAdmin: 
       netAmount: driverAmount,
       currency: 'NGN',
       type: 'ESCROW_RELEASE',
-      status: 'COMPLETED',
+      status: driverTransferStatus as any,
       transactionRef: `DRIVER_${escrow[0].transactionRef}`,
       description: `Delivery fee for order ${order[0].orderNumber}`,
-      completedAt: new Date(),
+      completedAt: driverTransferStatus === 'COMPLETED' ? new Date() : null,
       createdAt: new Date()
     });
 
