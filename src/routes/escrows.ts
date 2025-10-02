@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { escrows, orders, users, auditLogs, transactions } from '../db/schema';
@@ -145,7 +144,7 @@ router.post('/', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Create escrow error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -153,7 +152,7 @@ router.post('/', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to create escrow'
@@ -214,7 +213,7 @@ router.post('/delivery/complete', requireAuth, requireRole(['DRIVER']), async (r
     });
   } catch (error) {
     console.error('Complete delivery error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -222,7 +221,7 @@ router.post('/delivery/complete', requireAuth, requireRole(['DRIVER']), async (r
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to mark delivery complete'
@@ -292,7 +291,7 @@ router.post('/delivery/confirm', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Confirm delivery error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -300,7 +299,7 @@ router.post('/delivery/confirm', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to confirm delivery'
@@ -355,6 +354,14 @@ router.post('/dispute', requireAuth, async (req, res) => {
       });
     }
 
+    // Check escrow is not already released
+    if (escrow[0].status === 'RELEASED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot dispute an already released escrow'
+      });
+    }
+
     // Update escrow to disputed
     const updatedEscrow = await db
       .update(escrows)
@@ -364,7 +371,7 @@ router.post('/dispute', requireAuth, async (req, res) => {
       .where(eq(escrows.id, validatedData.escrowId))
       .returning();
 
-    // Create audit log
+    // Create audit log with dispute details
     await logAuditEvent(
       currentUser.id,
       'ESCROW_DISPUTED',
@@ -372,18 +379,21 @@ router.post('/dispute', requireAuth, async (req, res) => {
       { 
         reason: validatedData.reason,
         disputedBy: validatedData.disputedBy,
-        orderId: escrow[0].orderId
+        disputedByRole: isConsumer ? 'CONSUMER' : 'DRIVER',
+        orderId: escrow[0].orderId,
+        orderNumber: order[0].orderNumber,
+        escrowAmount: escrow[0].amount
       }
     );
 
     res.json({
       success: true,
-      message: 'Dispute raised. Admin will review the case.',
+      message: 'Dispute raised successfully. Payment will remain in escrow until admin resolves the case.',
       data: updatedEscrow[0]
     });
   } catch (error) {
     console.error('Dispute escrow error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -391,7 +401,7 @@ router.post('/dispute', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to raise dispute'
@@ -459,7 +469,7 @@ router.get('/', requireAuth, async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const status = req.query.status as string;
-    
+
     const offset = (page - 1) * limit;
     const conditions = [isNull(escrows.deletedAt)];
 

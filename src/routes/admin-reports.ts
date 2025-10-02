@@ -24,7 +24,7 @@ router.get('/financial', requireAuth, requireAdmin, async (req, res) => {
       })
       .from(transactions)
       .where(and(
-        eq(transactions.status, 'completed'),
+        eq(transactions.status, 'COMPLETED'),
         gte(transactions.createdAt, start),
         lte(transactions.createdAt, end)
       ));
@@ -84,7 +84,7 @@ router.get('/user-growth', requireAuth, requireAdmin, async (req, res) => {
     const [activityStats] = await db
       .select({
         totalUsers: count(),
-        verifiedUsers: count(sql`CASE WHEN ${users.emailVerified} = true THEN 1 END`)
+        verifiedUsers: count(sql`CASE WHEN ${users.isVerified} = true THEN 1 END`)
       })
       .from(users);
 

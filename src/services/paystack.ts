@@ -87,6 +87,7 @@ class PaystackService {
       }
 
       // Update transaction status
+      const metadata = (transaction.metadata as Record<string, any>) || {};
       const updatedTransaction = await db
         .update(transactions)
         .set({
@@ -95,7 +96,7 @@ class PaystackService {
           paystackTransactionId: data.id.toString(),
           completedAt: new Date(data.paid_at || data.created_at),
           metadata: {
-            ...transaction.metadata,
+            ...metadata,
             paystack: data
           }
         })
@@ -147,6 +148,7 @@ class PaystackService {
         return;
       }
 
+      const metadata = (transaction.metadata as Record<string, any>) || {};
       await db
         .update(transactions)
         .set({
@@ -154,7 +156,7 @@ class PaystackService {
           paymentGatewayRef: data.reference,
           paystackTransactionId: data.id.toString(),
           metadata: {
-            ...transaction.metadata,
+            ...metadata,
             paystack: data,
             failureReason: data.gateway_response
           }
@@ -240,10 +242,10 @@ class PaystackService {
         }),
       });
 
-      const data = await response.json();
+      const data = await response.json() as { status: boolean; message?: string; data?: any };
       
       if (!data.status) {
-        throw new Error(data.message);
+        throw new Error(data.message || 'Payment initialization failed');
       }
 
       return data.data;
@@ -269,10 +271,10 @@ class PaystackService {
         }
       );
 
-      const data = await response.json();
+      const data = await response.json() as { status: boolean; message?: string; data?: any };
       
       if (!data.status) {
-        throw new Error(data.message);
+        throw new Error(data.message || 'Payment verification failed');
       }
 
       return data.data;
