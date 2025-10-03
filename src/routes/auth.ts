@@ -543,6 +543,14 @@ router.post('/login/social', async (req, res) => {
   try {
     const socialData = socialAuthSchema.parse(req.body);
 
+    // Validate provider-specific data
+    if (!socialData.providerUserId || !socialData.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provider user ID and email are required'
+      });
+    }
+
     // Check if user exists with this email
     const [existingUser] = await db
       .select()
@@ -551,6 +559,7 @@ router.post('/login/social', async (req, res) => {
       .limit(1);
 
     let user;
+    let isNewUser = false;
 
     if (existingUser) {
       // User exists - treat as login
@@ -585,6 +594,24 @@ router.post('/login/social', async (req, res) => {
         .returning();
 
       user = newUsers[0];
+      isNewUser = true;
+
+      // Sync to Firebase Admin if available
+      try {
+        const { adminAuth } = await import('../config/firebase-admin');
+        if (adminAuth) {
+          await adminAuth.createUser({
+            uid: user.id.toString(),
+            email: socialData.email,
+            displayName: socialData.fullName,
+            photoURL: socialData.profilePicture,
+            emailVerified: true
+          });
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase sync failed for social user:', firebaseError);
+        // Continue anyway - Firebase is optional
+      }
     }
 
     // Create session
@@ -604,9 +631,25 @@ router.post('/login/social', async (req, res) => {
     const tokenPayload = JWTService.createPayloadFromUser(user);
     const tokens = JWTService.generateTokenPair(tokenPayload);
 
+    // Generate Firebase custom token if available
+    let firebaseToken;
+    try {
+      const { adminAuth } = await import('../config/firebase-admin');
+      if (adminAuth) {
+        firebaseToken = await adminAuth.createCustomToken(user.id.toString(), {
+          email: user.email,
+          role: user.role,
+          provider: socialData.provider
+        });
+      }
+    } catch (firebaseError) {
+      console.warn('Firebase custom token generation failed:', firebaseError);
+    }
+
     res.json({
       success: true,
-      isNewUser: !existingUser,
+      isNewUser,
+      provider: socialData.provider,
       user: {
         id: user.id,
         email: user.email,
@@ -615,13 +658,23 @@ router.post('/login/social', async (req, res) => {
         isVerified: user.isVerified || false,
         profilePicture: user.profilePicture
       },
-      tokens
+      tokens,
+      firebaseToken
     });
   } catch (error: any) {
     console.error('Social login error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request data',
+        errors: error.issues
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Social login failed'
+      message: error.message || 'Social login failed'
     });
   }
 });
@@ -630,6 +683,14 @@ router.post('/register/social', async (req, res) => {
   try {
     const socialData = socialAuthSchema.parse(req.body);
 
+    // Validate provider-specific data
+    if (!socialData.providerUserId || !socialData.email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Provider user ID and email are required'
+      });
+    }
+
     // Check if user exists with this email
     const [existingUser] = await db
       .select()
@@ -638,6 +699,7 @@ router.post('/register/social', async (req, res) => {
       .limit(1);
 
     let user;
+    let isNewUser = false;
 
     if (existingUser) {
       // User exists - treat as login
@@ -672,6 +734,24 @@ router.post('/register/social', async (req, res) => {
         .returning();
 
       user = newUsers[0];
+      isNewUser = true;
+
+      // Sync to Firebase Admin if available
+      try {
+        const { adminAuth } = await import('../config/firebase-admin');
+        if (adminAuth) {
+          await adminAuth.createUser({
+            uid: user.id.toString(),
+            email: socialData.email,
+            displayName: socialData.fullName,
+            photoURL: socialData.profilePicture,
+            emailVerified: true
+          });
+        }
+      } catch (firebaseError) {
+        console.warn('Firebase sync failed for social user:', firebaseError);
+        // Continue anyway - Firebase is optional
+      }
     }
 
     // Create session
@@ -691,9 +771,25 @@ router.post('/register/social', async (req, res) => {
     const tokenPayload = JWTService.createPayloadFromUser(user);
     const tokens = JWTService.generateTokenPair(tokenPayload);
 
+    // Generate Firebase custom token if available
+    let firebaseToken;
+    try {
+      const { adminAuth } = await import('../config/firebase-admin');
+      if (adminAuth) {
+        firebaseToken = await adminAuth.createCustomToken(user.id.toString(), {
+          email: user.email,
+          role: user.role,
+          provider: socialData.provider
+        });
+      }
+    } catch (firebaseError) {
+      console.warn('Firebase custom token generation failed:', firebaseError);
+    }
+
     res.json({
       success: true,
-      isNewUser: !existingUser,
+      isNewUser,
+      provider: socialData.provider,
       user: {
         id: user.id,
         email: user.email,
@@ -702,13 +798,23 @@ router.post('/register/social', async (req, res) => {
         isVerified: user.isVerified || false,
         profilePicture: user.profilePicture
       },
-      tokens
+      tokens,
+      firebaseToken
     });
   } catch (error: any) {
     console.error('Social registration error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid request data',
+        errors: error.issues
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Social registration failed'
+      message: error.message || 'Social registration failed'
     });
   }
 });
