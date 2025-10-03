@@ -28,22 +28,130 @@ router.post('/auth/signup', async (req, res) => {
   try {
     const validatedData = createUserSchema.parse(req.body);
 
-    const user = await FirebaseService.createUser(validatedData.email, validatedData.password);
+    // Create user in Firebase
+    const firebaseUser = await FirebaseService.createUser(validatedData.email, validatedData.password);
+
+    // Sync to local database
+    const bcrypt = await import('bcrypt');
+    const passwordHash = await bcrypt.hash(validatedData.password, 10);
+    
+    const { db } = await import('../db/config');
+    const { users } = await import('../db/schema');
+    
+    const [localUser] = await db
+      .insert(users)
+      .values({
+        email: validatedData.email,
+        fullName: validatedData.email.split('@')[0],
+        password: passwordHash,
+        role: 'CONSUMER',
+        isVerified: firebaseUser.emailVerified,
+        createdAt: new Date()
+      })
+      .returning()
+      .onConflictDoNothing();
+
+    // Generate tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokens = localUser ? JWTService.generateTokenPair(JWTService.createPayloadFromUser(localUser)) : null;
 
     res.json({
       success: true,
       message: 'User created successfully',
       user: {
-        uid: user.uid,
-        email: user.email,
-        emailVerified: user.emailVerified
-      }
+        uid: firebaseUser.uid,
+        id: localUser?.id,
+        email: firebaseUser.email,
+        emailVerified: firebaseUser.emailVerified
+      },
+      tokens
     });
   } catch (error: any) {
     console.error('Firebase create user error:', error);
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to create user'
+    });
+  }
+});
+
+// Firebase token verification endpoint
+router.post('/auth/verify-token', async (req, res) => {
+  try {
+    const { idToken } = z.object({ idToken: z.string() }).parse(req.body);
+    
+    const { adminAuth } = await import('../config/firebase-admin');
+    if (!adminAuth) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase Admin not initialized'
+      });
+    }
+
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    
+    // Find or create user in local database
+    const { db } = await import('../db/config');
+    const { users } = await import('../db/schema');
+    const { eq } = await import('drizzle-orm');
+    
+    let [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, decodedToken.email || ''))
+      .limit(1);
+
+    if (!user) {
+      // Create user from Firebase token
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: decodedToken.email || '',
+          fullName: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
+          password: null,
+          role: 'CONSUMER',
+          isVerified: decodedToken.email_verified || false,
+          profilePicture: decodedToken.picture,
+          createdAt: new Date()
+        })
+        .returning();
+      
+      user = newUser;
+    }
+
+    // Generate JWT tokens
+    const { JWTService } = await import('../services/jwt');
+    const tokens = JWTService.generateTokenPair(JWTService.createPayloadFromUser(user));
+
+    // Create session
+    (req.session as any).userId = user.id;
+    (req.session as any).user = {
+      id: user.id,
+      userId: user.id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role || 'CONSUMER',
+      isVerified: user.isVerified || false,
+      profilePicture: user.profilePicture
+    };
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        uid: decodedToken.uid,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: user.isVerified
+      },
+      tokens
+    });
+  } catch (error: any) {
+    console.error('Token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid token'
     });
   }
 });
@@ -136,6 +244,42 @@ router.delete('/firestore/:collection/:docId', requireAuth, async (req, res) => 
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to delete document'
+    });
+  }
+});
+
+export default router;
+
+
+// Firebase password reset
+router.post('/auth/reset-password', async (req, res) => {
+  try {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+    
+    const { adminAuth } = await import('../config/firebase-admin');
+    if (!adminAuth) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase Admin not initialized'
+      });
+    }
+
+    // Generate password reset link
+    const link = await adminAuth.generatePasswordResetLink(email);
+
+    // Send email with reset link (you can use your email service here)
+    const EmailService = await import('../services/email');
+    await EmailService.default.sendPasswordResetEmail(email, email.split('@')[0], link);
+
+    res.json({
+      success: true,
+      message: 'Password reset email sent'
+    });
+  } catch (error: any) {
+    console.error('Password reset error:', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to send password reset email'
     });
   }
 });

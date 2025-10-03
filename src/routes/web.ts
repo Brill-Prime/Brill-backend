@@ -70,27 +70,73 @@ router.post('/session/init', async (req, res) => {
       });
     }
 
-    // Here you would verify the Firebase ID token
-    // For now, we'll trust the client-side authentication
+    // Verify Firebase ID token
+    const { adminAuth } = await import('../config/firebase-admin');
+    if (!adminAuth) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase Admin not initialized'
+      });
+    }
+
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    
+    // Find or create user in local database
+    const { db } = await import('../db/config');
+    const { users } = await import('../db/schema');
+    const { eq } = await import('drizzle-orm');
+    
+    let [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, decodedToken.email || ''))
+      .limit(1);
+
+    if (!user) {
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          email: decodedToken.email || '',
+          fullName: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
+          password: null,
+          role: 'CONSUMER',
+          isVerified: decodedToken.email_verified || false,
+          profilePicture: decodedToken.picture,
+          createdAt: new Date()
+        })
+        .returning();
+      
+      user = newUser;
+    }
+
+    // Set session
+    req.session.userId = user.id;
     req.session.user = {
-      id: req.body.userId,
-      userId: req.body.userId,
-      email: req.body.email,
-      fullName: req.body.fullName || '',
-      role: req.body.role || 'USER',
-      isVerified: req.body.isVerified || false,
-      profilePicture: req.body.profilePicture
+      id: user.id,
+      userId: user.id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role || 'CONSUMER',
+      isVerified: user.isVerified || false,
+      profilePicture: user.profilePicture
     };
 
     res.json({
       success: true,
-      message: 'Session initialized successfully'
+      message: 'Session initialized successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        isVerified: user.isVerified
+      }
     });
   } catch (error: any) {
     console.error('Session init error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to initialize session'
+      message: error.message || 'Failed to initialize session'
     });
   }
 });

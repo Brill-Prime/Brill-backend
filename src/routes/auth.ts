@@ -69,6 +69,20 @@ router.post('/login', async (req, res) => {
     const tokenPayload = JWTService.createPayloadFromUser(user);
     const tokens = JWTService.generateTokenPair(tokenPayload);
 
+    // Generate Firebase custom token if available
+    let firebaseToken;
+    try {
+      const { adminAuth } = await import('../config/firebase-admin');
+      if (adminAuth) {
+        firebaseToken = await adminAuth.createCustomToken(user.id.toString(), {
+          email: user.email,
+          role: user.role
+        });
+      }
+    } catch (firebaseError) {
+      console.warn('Firebase custom token generation failed:', firebaseError);
+    }
+
     res.json({
       success: true,
       user: {
@@ -78,7 +92,8 @@ router.post('/login', async (req, res) => {
         role: user.role,
         isVerified: user.isVerified || false
       },
-      tokens
+      tokens,
+      firebaseToken
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -123,6 +138,22 @@ router.post('/register', async (req, res) => {
       .returning();
 
     const newUser = newUsers[0];
+
+    // Sync user to Firebase Admin if available
+    try {
+      const { adminAuth } = await import('../config/firebase-admin');
+      if (adminAuth) {
+        await adminAuth.createUser({
+          uid: newUser.id.toString(),
+          email: userData.email,
+          displayName: userData.fullName,
+          emailVerified: false
+        });
+      }
+    } catch (firebaseError) {
+      console.warn('Firebase user creation failed:', firebaseError);
+      // Continue anyway - Firebase is optional
+    }
 
     // Generate OTP for email verification
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();

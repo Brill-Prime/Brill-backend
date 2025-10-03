@@ -66,7 +66,7 @@ export const comparePassword = async (password: string, hashedPassword: string):
   return await bcrypt.compare(password, hashedPassword);
 };
 
-// Authentication middleware
+// Authentication middleware with Firebase Admin support
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Check for session-based auth first
@@ -88,6 +88,38 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
 
+      // Try Firebase Admin token verification first
+      try {
+        const { adminAuth } = await import('../config/firebase-admin');
+        if (adminAuth) {
+          const decodedToken = await adminAuth.verifyIdToken(token);
+          
+          // Find or create user in local database
+          const [user] = await db
+            .select()
+            .from(users)
+            .where(eq(users.email, decodedToken.email || ''))
+            .limit(1);
+
+          if (user) {
+            req.user = {
+              id: user.id,
+              userId: user.id.toString(),
+              fullName: user.fullName,
+              email: user.email,
+              role: user.role || 'CONSUMER',
+              isVerified: user.isVerified || decodedToken.email_verified || false,
+              profilePicture: user.profilePicture || undefined
+            };
+            return next();
+          }
+        }
+      } catch (firebaseError) {
+        // If Firebase verification fails, try JWT verification
+        console.log('Firebase token verification failed, trying JWT');
+      }
+
+      // Fallback to JWT token verification
       try {
         const decoded: any = await verifyToken(token);
 
