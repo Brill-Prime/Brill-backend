@@ -248,9 +248,6 @@ router.delete('/firestore/:collection/:docId', requireAuth, async (req, res) => 
   }
 });
 
-export default router;
-
-
 // Firebase password reset
 router.post('/auth/reset-password', async (req, res) => {
   try {
