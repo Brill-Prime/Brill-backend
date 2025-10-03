@@ -34,7 +34,7 @@ router.post('/generate', requireAuth, async (req, res) => {
       orderId: order.id,
       timestamp: Date.now(),
       hash: crypto.createHash('sha256')
-        .update(`${order.id}-${order.consumerId}-${Date.now()}`)
+        .update(`${order.id}-${order.customerId}-${Date.now()}`)
         .digest('hex')
     };
 
@@ -89,10 +89,6 @@ router.post('/verify', requireAuth, async (req, res) => {
     });
   }
 });
-
-export default router;
-
-const router = Router();
 
 // QR Code scanning endpoint
 router.post('/scan', async (req, res) => {
