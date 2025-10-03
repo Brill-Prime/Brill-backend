@@ -3,8 +3,6 @@ import express from 'express';
 import { requireAuth } from '../utils/auth';
 import { getWebSocketService } from '../services/websocket';
 
-import express from 'express';
-
 const router = express.Router();
 
 // Get real-time integration examples
@@ -42,8 +40,6 @@ router.get('/', async (req, res) => {
     });
   }
 });
-
-export default router;
 
 // GET /api/realtime-examples/integration - Get integration guide
 router.get('/integration', async (req, res) => {
@@ -224,8 +220,8 @@ router.get('/test-connection', requireAuth, async (req, res) => {
       });
     }
 
-  const userId = req.user!.id;
-  const connectionCount = wsService.getUserConnectionCount(String(userId));
+    const userId = req.user!.id;
+    const connectionCount = wsService.getUserConnectionCount(String(userId));
 
     res.json({
       success: true,
