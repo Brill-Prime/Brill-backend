@@ -47,6 +47,7 @@
     "nodemailer": "^7.0.6",
     "nodemon": "^3.1.10",
     "pg": "^8.16.3",
+    "resend": "^6.1.2",
     "ts-node": "^10.9.2",
     "twilio": "^5.10.2",
     "typescript": "^5.9.2",

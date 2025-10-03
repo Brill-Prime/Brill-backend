@@ -6,7 +6,7 @@ import { users, mfaTokens } from '../db/schema';
 import { eq, and, desc, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
-import { sendOTPEmail } from '../services/email';
+import EmailService from '../services/email';
 
 const router = express.Router();
 
@@ -142,7 +142,7 @@ router.post('/register', async (req, res) => {
 
     // Send OTP email via Gmail SMTP
     try {
-      const emailSent = await sendOTPEmail(userData.email, otpCode, userData.fullName);
+      const emailSent = await EmailService.sendOTPEmail(userData.email, otpCode, userData.fullName);
       if (!emailSent) {
         console.warn('Failed to send OTP email, but user was created');
       }
@@ -224,9 +224,8 @@ router.post('/forgot-password', async (req, res) => {
       });
 
     // Send reset email via Gmail SMTP
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
     try {
-      const emailSent = await sendOTPEmail(email, resetLink, user.fullName);
+      const emailSent = await EmailService.sendPasswordResetEmail(email, user.fullName, resetToken);
       if (!emailSent) {
         console.warn('Failed to send password reset email');
       }
@@ -386,6 +385,14 @@ router.post('/verify-email', async (req, res) => {
       .set({ isUsed: true, usedAt: new Date() })
       .where(eq(mfaTokens.id, otpToken.id));
 
+    // Send welcome email
+    try {
+      await EmailService.sendWelcomeEmail(user.email, user.fullName);
+    } catch (emailError) {
+      console.error('Failed to send welcome email:', emailError);
+      // Do not block the user flow if email sending fails
+    }
+
     // Update session if exists
     if (req.session?.userId === user.id) {
       (req.session as any).user.isVerified = true;
@@ -468,7 +475,7 @@ router.post('/resend-verification', async (req, res) => {
 
     // Send OTP email
     try {
-      const emailSent = await sendOTPEmail(email, otpCode, user.fullName);
+      const emailSent = await EmailService.sendOTPEmail(email, otpCode, user.fullName);
       if (!emailSent) {
         console.warn('Failed to send verification email');
       }
