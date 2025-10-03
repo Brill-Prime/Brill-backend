@@ -3,7 +3,47 @@ import express from 'express';
 import { requireAuth } from '../utils/auth';
 import { getWebSocketService } from '../services/websocket';
 
+import express from 'express';
+
 const router = express.Router();
+
+// Get real-time integration examples
+router.get('/', async (req, res) => {
+  try {
+    const examples = {
+      websocket: {
+        description: 'WebSocket connection for real-time updates',
+        url: `ws://${req.get('host')}/ws`,
+        events: [
+          { name: 'orderUpdate', description: 'Order status changes' },
+          { name: 'driverLocation', description: 'Driver location updates' },
+          { name: 'newMessage', description: 'New chat messages' }
+        ]
+      },
+      firebase: {
+        description: 'Firebase Realtime Database integration',
+        paths: [
+          '/orders/{orderId}/status',
+          '/drivers/{driverId}/location',
+          '/messages/{chatId}'
+        ]
+      }
+    };
+
+    res.json({
+      success: true,
+      examples
+    });
+  } catch (error: any) {
+    console.error('Get examples error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get examples'
+    });
+  }
+});
+
+export default router;
 
 // GET /api/realtime-examples/integration - Get integration guide
 router.get('/integration', async (req, res) => {

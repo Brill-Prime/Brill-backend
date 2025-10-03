@@ -3,7 +3,68 @@ import express from 'express';
 import { z } from 'zod';
 import { requireAuth, requireAdmin } from '../utils/auth';
 
+import express from 'express';
+import { requireAuth, requireAdmin } from '../utils/auth';
+
 const router = express.Router();
+
+// Get app configuration
+router.get('/', async (req, res) => {
+  try {
+    const config = {
+      version: '1.0.0',
+      features: {
+        socialAuth: true,
+        emailVerification: true,
+        pushNotifications: true,
+        realtime: true
+      },
+      limits: {
+        maxOrderItems: 50,
+        maxFileSize: 5242880, // 5MB
+        sessionTimeout: 86400000 // 24 hours
+      },
+      endpoints: {
+        api: '/api',
+        ws: '/ws'
+      }
+    };
+
+    res.json({
+      success: true,
+      config
+    });
+  } catch (error: any) {
+    console.error('Get config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get configuration'
+    });
+  }
+});
+
+// Get payment methods configuration
+router.get('/payment-methods', async (req, res) => {
+  try {
+    const paymentMethods = [
+      { id: 'paystack', name: 'Paystack', enabled: true },
+      { id: 'wallet', name: 'Wallet', enabled: true }
+    ];
+
+    res.json({
+      success: true,
+      paymentMethods
+    });
+  } catch (error: any) {
+    console.error('Get payment methods error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get payment methods'
+    });
+  }
+});
+
+export default router;
 
 // GET /api/config/env-status - Check environment variables status
 router.get('/env-status', requireAuth, requireAdmin, async (req, res) => {
