@@ -1,100 +1,110 @@
 
-import { auth, db, storage } from '../config/firebase';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  signOut,
-  User
-} from 'firebase/auth';
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc,
-  query,
-  where,
-  getDocs
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { adminAuth, adminDb, adminStorage } from '../config/firebase-admin';
+
+// Note: The Firebase Admin SDK is used on the server side. 
+// It has different methods than the client-side SDK.
+// For example, user sign-in is a client-side operation. 
+// The server verifies ID tokens, but does not sign users in with passwords.
 
 export class FirebaseService {
-  // Authentication methods
-  static async signInUser(email: string, password: string) {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      return userCredential.user;
-    } catch (error) {
-      throw error;
-    }
-  }
 
+  // =================================================================
+  // Authentication (Admin SDK)
+  // =================================================================
+
+  /**
+   * Creates a new user in Firebase Authentication.
+   * @param email The user's email.
+   * @param password The user's password.
+   * @returns The created user record.
+   */
   static async createUser(email: string, password: string) {
+    if (!adminAuth) throw new Error('Firebase Admin Auth not initialized');
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      return userCredential.user;
+      const userRecord = await adminAuth.createUser({ email, password });
+      return userRecord;
     } catch (error) {
+      console.error("Error creating Firebase user:", error);
       throw error;
     }
   }
 
-  static async signOutUser() {
+  /**
+   * Fetches a user record by email.
+   * @param email The user's email.
+   * @returns The user record.
+   */
+  static async getUserByEmail(email: string) {
+    if (!adminAuth) throw new Error('Firebase Admin Auth not initialized');
     try {
-      await signOut(auth);
+      const userRecord = await adminAuth.getUserByEmail(email);
+      return userRecord;
     } catch (error) {
+      console.error("Error fetching user by email:", error);
       throw error;
     }
   }
 
-  // Firestore methods
+  // =================================================================
+  // Firestore (Admin SDK)
+  // =================================================================
+
   static async createDocument(collectionName: string, docId: string, data: any) {
+    if (!adminDb) throw new Error('Firebase Admin Firestore not initialized');
     try {
-      await setDoc(doc(db, collectionName, docId), data);
+      await adminDb.collection(collectionName).doc(docId).set(data);
       return true;
     } catch (error) {
+      console.error("Error creating Firestore document:", error);
       throw error;
     }
   }
 
   static async getDocument(collectionName: string, docId: string) {
+    if (!adminDb) throw new Error('Firebase Admin Firestore not initialized');
     try {
-      const docRef = doc(db, collectionName, docId);
-      const docSnap = await getDoc(docRef);
+      const docRef = adminDb.collection(collectionName).doc(docId);
+      const docSnap = await docRef.get();
       
-      if (docSnap.exists()) {
+      if (docSnap.exists) {
         return { id: docSnap.id, ...docSnap.data() };
       } else {
         return null;
       }
     } catch (error) {
+      console.error("Error getting Firestore document:", error);
       throw error;
     }
   }
 
   static async updateDocument(collectionName: string, docId: string, data: any) {
+    if (!adminDb) throw new Error('Firebase Admin Firestore not initialized');
     try {
-      const docRef = doc(db, collectionName, docId);
-      await updateDoc(docRef, data);
+      const docRef = adminDb.collection(collectionName).doc(docId);
+      await docRef.update(data);
       return true;
     } catch (error) {
+      console.error("Error updating Firestore document:", error);
       throw error;
     }
   }
 
   static async deleteDocument(collectionName: string, docId: string) {
+    if (!adminDb) throw new Error('Firebase Admin Firestore not initialized');
     try {
-      await deleteDoc(doc(db, collectionName, docId));
+      await adminDb.collection(collectionName).doc(docId).delete();
       return true;
     } catch (error) {
+      console.error("Error deleting Firestore document:", error);
       throw error;
     }
   }
 
-  static async queryDocuments(collectionName: string, field: string, operator: any, value: any) {
+  static async queryDocuments(collectionName: string, field: string, operator: FirebaseFirestore.WhereFilterOp, value: any) {
+    if (!adminDb) throw new Error('Firebase Admin Firestore not initialized');
     try {
-      const q = query(collection(db, collectionName), where(field, operator, value));
-      const querySnapshot = await getDocs(q);
+      const q = adminDb.collection(collectionName).where(field, operator, value);
+      const querySnapshot = await q.get();
       
       const documents: any[] = [];
       querySnapshot.forEach((doc) => {
@@ -103,28 +113,47 @@ export class FirebaseService {
       
       return documents;
     } catch (error) {
+      console.error("Error querying Firestore documents:", error);
       throw error;
     }
   }
 
-  // Storage methods
+  // =================================================================
+  // Cloud Storage (Admin SDK)
+  // =================================================================
+
   static async uploadFile(file: Buffer, fileName: string, folder: string = 'uploads') {
+    if (!adminStorage) throw new Error('Firebase Admin Storage not initialized');
     try {
-      const storageRef = ref(storage, `${folder}/${fileName}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      return downloadURL;
+      const bucket = adminStorage.bucket();
+      const filePath = `${folder}/${fileName}`;
+      const fileUpload = bucket.file(filePath);
+
+      await fileUpload.save(file);
+      
+      // Make the file public and return the URL
+      await fileUpload.makePublic();
+      return fileUpload.publicUrl();
+
     } catch (error) {
+      console.error("Error uploading file to Storage:", error);
       throw error;
     }
   }
 
   static async deleteFile(filePath: string) {
+    if (!adminStorage) throw new Error('Firebase Admin Storage not initialized');
     try {
-      const fileRef = ref(storage, filePath);
-      await deleteObject(fileRef);
+      const bucket = adminStorage.bucket();
+      await bucket.file(filePath).delete();
       return true;
     } catch (error) {
+      console.error("Error deleting file from Storage:", error);
+      // Check if the error is that the file doesn't exist, which is not a failure
+      if ((error as any).code === 404) {
+        console.warn(`File not found, could not delete: ${filePath}`);
+        return true; 
+      }
       throw error;
     }
   }

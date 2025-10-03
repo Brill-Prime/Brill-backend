@@ -7,11 +7,6 @@ import { requireAuth } from '../utils/auth';
 const router = express.Router();
 
 // Validation schemas
-const signInSchema = z.object({
-  email: z.string().email('Invalid email format'),
-  password: z.string().min(6, 'Password must be at least 6 characters')
-});
-
 const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(6, 'Password must be at least 6 characters')
@@ -30,30 +25,6 @@ const updateDocumentSchema = z.object({
 });
 
 // Authentication routes
-router.post('/auth/signin', async (req, res) => {
-  try {
-    const validatedData = signInSchema.parse(req.body);
-    
-    const user = await FirebaseService.signInUser(validatedData.email, validatedData.password);
-    
-    res.json({
-      success: true,
-      message: 'User signed in successfully',
-      user: {
-        uid: user.uid,
-        email: user.email,
-        emailVerified: user.emailVerified
-      }
-    });
-  } catch (error: any) {
-    console.error('Firebase sign in error:', error);
-    res.status(400).json({
-      success: false,
-      message: error.message || 'Failed to sign in user'
-    });
-  }
-});
-
 router.post('/auth/signup', async (req, res) => {
   try {
     const validatedData = createUserSchema.parse(req.body);
@@ -74,23 +45,6 @@ router.post('/auth/signup', async (req, res) => {
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to create user'
-    });
-  }
-});
-
-router.post('/auth/signout', async (req, res) => {
-  try {
-    await FirebaseService.signOutUser();
-    
-    res.json({
-      success: true,
-      message: 'User signed out successfully'
-    });
-  } catch (error: any) {
-    console.error('Firebase sign out error:', error);
-    res.status(400).json({
-      success: false,
-      message: error.message || 'Failed to sign out user'
     });
   }
 });

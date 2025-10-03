@@ -1,19 +1,19 @@
 
 import express from 'express';
-import { db } from '../db/config';
-import { users } from '../db/schema';
+import { getDatabase } from "firebase-admin/database";
 
 const router = express.Router();
+const db = getDatabase();
 
 // GET /api/health - Basic health check
 router.get('/', async (req, res) => {
   try {
     const startTime = Date.now();
-    
-    // Test database connection
-    await db.select().from(users).limit(1);
+
+    // Test database connection by reading the root
+    await db.ref().get();
     const dbResponseTime = Date.now() - startTime;
-    
+
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
         }
       }
     });
-    
+
   } catch (error) {
     console.error('Health check failed:', error);
     res.status(503).json({
@@ -54,14 +54,14 @@ router.get('/detailed', async (req, res) => {
 
     // Database check
     try {
-      await db.select().from(users).limit(1);
+      await db.ref().get();
       checks.database = true;
     } catch (error) {
       console.error('Database check failed:', error);
     }
 
     // Email service check
-    checks.email = !!(process.env.GMAIL_USER && process.env.GMAIL_PASS) || 
+    checks.email = !!(process.env.GMAIL_USER && process.env.GMAIL_PASS) ||
                    !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 
     // SMS service check

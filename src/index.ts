@@ -1,3 +1,6 @@
+
+import 'dotenv/config';
+import './config/firebase-admin';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -25,16 +28,10 @@ import messagesRouter from './routes/messages';
 import contentReportsRouter from './routes/content-reports';
 import moderationResponsesRouter from './routes/moderation-responses';
 import firebaseRouter from './routes/firebase';
-import mobileRouter from './routes/mobile';
-import iosRoutes from './routes/ios';
-import androidRoutes from './routes/android';
 import webRoutes from './routes/web';
 import realtimeRouter from './routes/realtime';
-import { testConnection, db } from './db/config';
-import { users } from './db/schema';
 import cartRoutes from './routes/cart';
 import checkoutRoutes from './routes/checkout';
-import mobileHealthRoutes from './routes/mobile-health';
 import driverLocationRoutes from './routes/driver-location';
 import qrProcessingRoutes from './routes/qr-processing';
 import autoAssignmentRoutes from './routes/auto-assignment';
@@ -219,15 +216,6 @@ app.use('/api/moderation-responses', moderationResponsesRouter);
 // Firebase routes
 app.use('/api/firebase', firebaseRouter);
 
-// Mobile routes for cross-platform support
-app.use('/api/mobile', mobileRouter);
-
-// iOS specific routes
-app.use('/api/ios', iosRoutes);
-
-// Android specific routes
-app.use('/api/android', androidRoutes);
-
 // Web specific routes
 app.use('/api/web', webRoutes);
 
@@ -291,7 +279,6 @@ app.use('/api/bank-accounts', bankAccountsRouter);
 app.use('/api/paystack', paystackWebhooksRouter);
 
 // Register new routes
-app.use('/api/mobile/health', mobileHealthRoutes);
 app.use('/api/driver/location', driverLocationRoutes);
 app.use('/api/qr', qrProcessingRoutes);
 app.use('/api/orders/auto-assign', autoAssignmentRoutes);
@@ -340,32 +327,6 @@ app.get('/health', (req, res) => {
   res.json(healthData);
 });
 
-// Test database endpoint
-app.get('/test-db', async (req, res) => {
-  try {
-    // Try to fetch all users (limit to 10 for testing)
-    const allUsers = await db.select().from(users).limit(10);
-
-    res.json({
-      success: true,
-      message: 'Database query successful',
-      data: {
-        totalUsers: allUsers.length,
-        users: allUsers
-      },
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error('Database query error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Database query failed',
-      error: error instanceof Error ? error.message : 'Unknown error',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
 // Start escrow auto-release service
 startEscrowAutoReleaseService();
 
@@ -374,9 +335,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔗 WebSocket server running on ws://0.0.0.0:${PORT}/ws`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-
-  // Test database connection
-  await testConnection();
+  console.log('Firebase Realtime Database is configured.');
 });
 
 // Helper function to format uptime

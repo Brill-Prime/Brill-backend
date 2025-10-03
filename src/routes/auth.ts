@@ -590,7 +590,7 @@ router.post('/login/social', async (req, res) => {
 
 router.post('/register/social', async (req, res) => {
   try {
-    const socialData = socialRegisterSchema.parse(req.body);
+    const socialData = socialAuthSchema.parse(req.body);
 
     // Check if user exists with this email
     const [existingUser] = await db
