@@ -74,6 +74,9 @@ const app = express();
 const server = createServer(app);
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
+// Trust proxy - required for Replit environment and rate limiting
+app.set('trust proxy', 1);
+
 // Initialize WebSocket service
 const wsService = initializeWebSocket(server);
 

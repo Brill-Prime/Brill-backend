@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { Server } from 'http';
 import jwt from 'jsonwebtoken';
-import { getDatabase } from 'firebase-admin/database';
+import firebaseAdmin from '../config/firebase-admin';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
@@ -16,7 +16,19 @@ interface WebSocketMessage {
   timestamp?: string;
 }
 
-const db = getDatabase();
+// Lazy-load Firebase Database only if Firebase Admin is initialized
+const getDb = () => {
+  if (firebaseAdmin) {
+    try {
+      const { getDatabase } = require('firebase-admin/database');
+      return getDatabase();
+    } catch (error) {
+      console.warn('⚠️ Firebase Admin Database not available');
+      return null;
+    }
+  }
+  return null;
+};
 
 export class WebSocketService {
   private wss: WebSocket.Server;
@@ -95,19 +107,29 @@ export class WebSocketService {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-      const userRef = db.ref(`users/${decoded.userId}`);
-      const userSnapshot = await userRef.get();
+      
+      // Use Firebase if available, otherwise use JWT data directly
+      const db = getDb();
+      if (db) {
+        const userRef = db.ref(`users/${decoded.userId}`);
+        const userSnapshot = await userRef.get();
 
-      if (!userSnapshot.exists()) {
-        ws.send(JSON.stringify({ type: 'error', data: { message: 'User not found' } }));
-        ws.close();
-        return;
+        if (!userSnapshot.exists()) {
+          ws.send(JSON.stringify({ type: 'error', data: { message: 'User not found' } }));
+          ws.close();
+          return;
+        }
+
+        const user = userSnapshot.val();
+        ws.userId = decoded.userId;
+        ws.userRole = user.role;
+        ws.isAuthenticated = true;
+      } else {
+        // Fallback: use JWT decoded data directly
+        ws.userId = decoded.userId;
+        ws.userRole = decoded.role || 'CONSUMER';
+        ws.isAuthenticated = true;
       }
-
-      const user = userSnapshot.val();
-      ws.userId = decoded.userId;
-      ws.userRole = user.role;
-      ws.isAuthenticated = true;
 
       if (!this.clients.has(ws.userId)) {
         this.clients.set(ws.userId, []);
@@ -162,9 +184,17 @@ export class WebSocketService {
 
     try {
       const { orderId, latitude, longitude } = data;
-      const trackingRef = db.ref(`tracking/${orderId}`);
-      await trackingRef.set({ driverId: ws.userId, latitude, longitude, timestamp: new Date().toISOString() });
-      ws.send(JSON.stringify({ type: 'location_updated', data: { success: true } }));
+      const db = getDb();
+      
+      if (db) {
+        const trackingRef = db.ref(`tracking/${orderId}`);
+        await trackingRef.set({ driverId: ws.userId, latitude, longitude, timestamp: new Date().toISOString() });
+        ws.send(JSON.stringify({ type: 'location_updated', data: { success: true } }));
+      } else {
+        // Firebase not available - log warning
+        console.warn('⚠️ Firebase not configured - location tracking disabled');
+        ws.send(JSON.stringify({ type: 'warning', data: { message: 'Location tracking temporarily unavailable' } }));
+      }
     } catch (error) {
       console.error('Location update error:', error);
       ws.send(JSON.stringify({ type: 'error', data: { message: 'Failed to update location' } }));

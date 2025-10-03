@@ -1,18 +1,41 @@
 
 import express from 'express';
-import { getDatabase } from "firebase-admin/database";
+import firebaseAdmin from '../config/firebase-admin';
 
 const router = express.Router();
-const db = getDatabase();
+
+// Lazy-load Firebase Database only if Firebase Admin is initialized
+const getDb = () => {
+  if (firebaseAdmin) {
+    try {
+      const { getDatabase } = require('firebase-admin/database');
+      return getDatabase();
+    } catch (error) {
+      return null;
+    }
+  }
+  return null;
+};
 
 // GET /api/health - Basic health check
 router.get('/', async (req, res) => {
   try {
     const startTime = Date.now();
+    const db = getDb();
+    
+    let dbStatus = 'not_configured';
+    let dbResponseTime = 0;
 
-    // Test database connection by reading the root
-    await db.ref().get();
-    const dbResponseTime = Date.now() - startTime;
+    // Test database connection if Firebase is available
+    if (db) {
+      try {
+        await db.ref().get();
+        dbResponseTime = Date.now() - startTime;
+        dbStatus = 'healthy';
+      } catch (error) {
+        dbStatus = 'error';
+      }
+    }
 
     res.json({
       status: 'healthy',
@@ -22,8 +45,8 @@ router.get('/', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
       services: {
         database: {
-          status: 'healthy',
-          responseTime: `${dbResponseTime}ms`
+          status: dbStatus,
+          responseTime: dbResponseTime > 0 ? `${dbResponseTime}ms` : 'N/A'
         },
         memory: {
           usage: process.memoryUsage(),
@@ -37,7 +60,7 @@ router.get('/', async (req, res) => {
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: 'Database connection failed'
+      error: 'Health check failed'
     });
   }
 });
@@ -54,8 +77,11 @@ router.get('/detailed', async (req, res) => {
 
     // Database check
     try {
-      await db.ref().get();
-      checks.database = true;
+      const db = getDb();
+      if (db) {
+        await db.ref().get();
+        checks.database = true;
+      }
     } catch (error) {
       console.error('Database check failed:', error);
     }

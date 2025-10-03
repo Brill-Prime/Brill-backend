@@ -269,7 +269,7 @@ router.post('/assign', requireAuth, requireRole(['MERCHANT', 'ADMIN']), async (r
     // Send real-time notification to driver
     const wsService = getWebSocketService();
     if (wsService) {
-      await wsService.sendNotificationToUser(validatedData.driverId, {
+      await wsService.sendNotificationToUser(validatedData.driverId.toString(), {
         type: 'DELIVERY_ASSIGNMENT',
         title: 'New Delivery Assignment',
         message: `You have been assigned order ${order.orderNumber}`,
@@ -506,7 +506,7 @@ router.post('/:orderId/respond', requireAuth, requireRole(['DRIVER']), async (re
     if (wsService) {
       // Notify customer
       if (order.customerId) {
-        await wsService.sendNotificationToUser(order.customerId, {
+        await wsService.sendNotificationToUser(order.customerId.toString(), {
           type: 'ASSIGNMENT_UPDATE',
           title: 'Delivery Update',
           message: validatedData.status === 'ACCEPTED' ? 
@@ -518,7 +518,7 @@ router.post('/:orderId/respond', requireAuth, requireRole(['DRIVER']), async (re
 
       // Notify merchant
       if (order.merchantId) {
-        await wsService.sendNotificationToUser(order.merchantId, {
+        await wsService.sendNotificationToUser(order.merchantId.toString(), {
           type: 'ASSIGNMENT_UPDATE',
           title: 'Driver Response',
           message: `Driver ${validatedData.status.toLowerCase()} order ${order.orderNumber}`,

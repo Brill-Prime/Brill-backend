@@ -211,7 +211,7 @@ router.post('/orders/:id/accept', requireAuth, requireRole(['DRIVER']), async (r
     // Send real-time notification to customer
     const wsService = getWebSocketService();
     if (wsService && order.customerId) {
-      await wsService.sendNotificationToUser(order.customerId, {
+      await wsService.sendNotificationToUser(order.customerId.toString(), {
         type: 'ORDER_ACCEPTED',
         title: 'Order Accepted',
         message: `Your order ${order.orderNumber} has been accepted by the driver`,
@@ -311,7 +311,7 @@ router.post('/orders/:id/reject', requireAuth, requireRole(['DRIVER']), async (r
     const wsService = getWebSocketService();
     if (wsService) {
       if (order.customerId) {
-        await wsService.sendNotificationToUser(order.customerId, {
+        await wsService.sendNotificationToUser(order.customerId.toString(), {
           type: 'ORDER_REJECTED',
           title: 'Order Rejected',
           message: `Your order ${order.orderNumber} was rejected by the driver. We're finding you another driver.`,
@@ -320,7 +320,7 @@ router.post('/orders/:id/reject', requireAuth, requireRole(['DRIVER']), async (r
       }
 
       if (order.merchantId) {
-        await wsService.sendNotificationToUser(order.merchantId, {
+        await wsService.sendNotificationToUser(order.merchantId.toString(), {
           type: 'ORDER_REJECTED',
           title: 'Driver Rejected Order',
           message: `Order ${order.orderNumber} was rejected. Reason: ${validatedData.reason}`,
@@ -418,7 +418,7 @@ router.post('/orders/:id/update-location', requireAuth, requireRole(['DRIVER']),
     // Send real-time location update to customer
     const wsService = getWebSocketService();
     if (wsService && order.customerId) {
-      await wsService.sendNotificationToUser(order.customerId, {
+      await wsService.sendNotificationToUser(order.customerId.toString(), {
         type: 'DRIVER_LOCATION_UPDATE',
         title: 'Driver Location Updated',
         message: 'Your driver is on the way',
@@ -517,11 +517,18 @@ router.post('/orders/:id/mark-delivered', requireAuth, requireRole(['DRIVER']), 
       .returning();
 
     // Update driver availability back to available
+    // Get current total deliveries first
+    const currentDriver = await db
+      .select()
+      .from(driverProfiles)
+      .where(eq(driverProfiles.userId, driverId))
+      .limit(1);
+    
     await db
       .update(driverProfiles)
       .set({
         isAvailable: true,
-        totalDeliveries: db.$increment(driverProfiles.totalDeliveries, 1),
+        totalDeliveries: (currentDriver[0]?.totalDeliveries || 0) + 1,
         updatedAt: new Date()
       })
       .where(eq(driverProfiles.userId, driverId));
@@ -558,7 +565,7 @@ router.post('/orders/:id/mark-delivered', requireAuth, requireRole(['DRIVER']), 
     // Send real-time notification to customer
     const wsService = getWebSocketService();
     if (wsService && order.customerId) {
-      await wsService.sendNotificationToUser(order.customerId, {
+      await wsService.sendNotificationToUser(order.customerId.toString(), {
         type: 'ORDER_DELIVERED',
         title: 'Order Delivered',
         message: `Your order ${order.orderNumber} has been delivered. Please confirm receipt.`,
