@@ -124,7 +124,7 @@ app.use(session({
 app.use(responseTimeMiddleware);
 
 // Auth routes
-app.use('/auth', authRouter);
+app.use('/api/auth', authRouter);
 
 // User management routes
 app.use('/api/users', userRouter);
