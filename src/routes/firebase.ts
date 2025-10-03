@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { z } from 'zod';
 import { FirebaseService } from '../services/firebase';
@@ -28,9 +27,9 @@ const updateDocumentSchema = z.object({
 router.post('/auth/signup', async (req, res) => {
   try {
     const validatedData = createUserSchema.parse(req.body);
-    
+
     const user = await FirebaseService.createUser(validatedData.email, validatedData.password);
-    
+
     res.json({
       success: true,
       message: 'User created successfully',
@@ -53,13 +52,13 @@ router.post('/auth/signup', async (req, res) => {
 router.post('/firestore/create', requireAuth, async (req, res) => {
   try {
     const validatedData = createDocumentSchema.parse(req.body);
-    
+
     await FirebaseService.createDocument(
       validatedData.collection,
       validatedData.docId,
       validatedData.data
     );
-    
+
     res.json({
       success: true,
       message: 'Document created successfully'
@@ -76,16 +75,16 @@ router.post('/firestore/create', requireAuth, async (req, res) => {
 router.get('/firestore/:collection/:docId', requireAuth, async (req, res) => {
   try {
     const { collection, docId } = req.params;
-    
+
     const document = await FirebaseService.getDocument(collection, docId);
-    
+
     if (!document) {
       return res.status(404).json({
         success: false,
         message: 'Document not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: document
@@ -102,13 +101,13 @@ router.get('/firestore/:collection/:docId', requireAuth, async (req, res) => {
 router.put('/firestore/update', requireAuth, async (req, res) => {
   try {
     const validatedData = updateDocumentSchema.parse(req.body);
-    
+
     await FirebaseService.updateDocument(
       validatedData.collection,
       validatedData.docId,
       validatedData.data
     );
-    
+
     res.json({
       success: true,
       message: 'Document updated successfully'
@@ -125,9 +124,9 @@ router.put('/firestore/update', requireAuth, async (req, res) => {
 router.delete('/firestore/:collection/:docId', requireAuth, async (req, res) => {
   try {
     const { collection, docId } = req.params;
-    
+
     await FirebaseService.deleteDocument(collection, docId);
-    
+
     res.json({
       success: true,
       message: 'Document deleted successfully'
