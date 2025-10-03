@@ -22,6 +22,55 @@ export class WebSocketService {
   private wss: WebSocket.Server;
   private clients: Map<string, AuthenticatedWebSocket[]> = new Map();
 
+  /**
+   * Returns the number of currently connected clients (WebSocket connections).
+   */
+  public getConnectedClients(): number {
+    let count = 0;
+    for (const arr of this.clients.values()) {
+      count += arr.length;
+    }
+    return count;
+  }
+
+  /**
+   * Returns the number of connections for a specific userId.
+   */
+  public getUserConnectionCount(userId: string): number {
+    const arr = this.clients.get(userId);
+    return arr ? arr.length : 0;
+  }
+
+  /**
+   * Broadcasts an order update to all participants of the order (customer, merchant, driver).
+   * This is a stub; you may want to expand participant lookup as needed.
+   */
+  public async broadcastOrderUpdate(orderId: number, payload: any) {
+    // You may want to fetch order participants from DB here.
+    // For now, broadcast to all connected clients.
+    for (const arr of this.clients.values()) {
+      arr.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(payload));
+        }
+      });
+    }
+  }
+
+  /**
+   * Sends a notification to a specific user (all their connections).
+   */
+  public async sendNotificationToUser(userId: string, payload: any) {
+    const arr = this.clients.get(userId);
+    if (arr) {
+      arr.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ type: 'notification', data: payload }));
+        }
+      });
+    }
+  }
+
   constructor(server: Server) {
     this.wss = new WebSocket.Server({ 
       server,

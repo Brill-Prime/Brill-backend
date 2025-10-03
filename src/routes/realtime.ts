@@ -45,7 +45,7 @@ router.get('/status', requireAuth, async (req, res) => {
     const status = {
       isRunning: true,
       connectedClients: wsService.getConnectedClients(),
-      userConnections: wsService.getUserConnectionCount(req.user!.id),
+      userConnections: wsService.getUserConnectionCount(String(req.user!.id)),
       timestamp: new Date().toISOString()
     };
 

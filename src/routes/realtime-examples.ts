@@ -184,8 +184,8 @@ router.get('/test-connection', requireAuth, async (req, res) => {
       });
     }
 
-    const userId = req.user!.id;
-    const connectionCount = wsService.getUserConnectionCount(userId);
+  const userId = req.user!.id;
+  const connectionCount = wsService.getUserConnectionCount(String(userId));
 
     res.json({
       success: true,
