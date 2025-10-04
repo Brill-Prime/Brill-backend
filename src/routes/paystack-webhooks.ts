@@ -11,7 +11,7 @@ const verifyPaystackWebhook = (req: express.Request, res: express.Response, next
   const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY;
 
   if (!secret) {
-    console.warn('Paystack webhook secret not configured');
+    console.error('Paystack webhook secret not configured');
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
 
@@ -20,9 +20,12 @@ const verifyPaystackWebhook = (req: express.Request, res: express.Response, next
     .update(JSON.stringify(req.body))
     .digest('hex');
 
-  if (hash === req.headers['x-paystack-signature']) {
+  const signature = req.headers['x-paystack-signature'] as string;
+
+  if (hash === signature) {
     next();
   } else {
+    console.error('Invalid webhook signature received');
     res.status(400).json({ error: 'Invalid signature' });
   }
 };

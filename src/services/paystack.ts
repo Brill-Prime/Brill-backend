@@ -86,7 +86,9 @@ class PaystackService {
       }
 
       // Update transaction status
-      const metadata = (transaction.metadata as Record<string, any>) || {};
+      const existingMetadata = transaction.metadata as Record<string, any> | null;
+      const metadata = (typeof existingMetadata === 'object' && existingMetadata !== null) ? existingMetadata : {};
+      
       const updatedTransaction = await db
         .update(transactions)
         .set({
@@ -95,8 +97,9 @@ class PaystackService {
           paystackTransactionId: data.id.toString(),
           completedAt: new Date(data.paid_at || data.created_at),
           metadata: {
-            ...(typeof metadata === 'object' && metadata !== null ? metadata : {}),
-            paystack: data
+            ...metadata,
+            paystack: data,
+            completedVia: 'webhook'
           } as any
         })
         .where(eq(transactions.id, transaction.id))
@@ -178,7 +181,9 @@ class PaystackService {
         return;
       }
 
-      const metadata = (transaction.metadata as Record<string, any>) || {};
+      const existingMetadata = transaction.metadata as Record<string, any> | null;
+      const metadata = (typeof existingMetadata === 'object' && existingMetadata !== null) ? existingMetadata : {};
+      
       await db
         .update(transactions)
         .set({
@@ -186,12 +191,24 @@ class PaystackService {
           paymentGatewayRef: data.reference,
           paystackTransactionId: data.id.toString(),
           metadata: {
-            ...(typeof metadata === 'object' && metadata !== null ? metadata : {}),
+            ...metadata,
             paystack: data,
-            failureReason: data.gateway_response
+            failureReason: data.gateway_response || 'Payment failed',
+            failedAt: new Date().toISOString()
           } as any
         })
         .where(eq(transactions.id, transaction.id));
+      
+      // Update associated order to failed if exists
+      if (transaction.orderId) {
+        await db
+          .update(orders)
+          .set({
+            status: 'CANCELLED',
+            updatedAt: new Date()
+          })
+          .where(eq(orders.id, transaction.orderId));
+      }
 
       // Log audit event
       await db.insert(auditLogs).values({

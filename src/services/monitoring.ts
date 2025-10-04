@@ -29,9 +29,23 @@ class MonitoringService {
         this.metrics.errors++;
       }
 
-      // Log slow requests
+      // Log slow requests with context
       if (duration > 1000) {
-        console.warn(`Slow request: ${req.method} ${req.path} - ${duration}ms`);
+        const user = (req as any).user;
+        console.warn(`Slow request: ${req.method} ${req.path} - ${duration}ms`, {
+          userId: user?.id,
+          statusCode: res.statusCode,
+          userAgent: req.headers['user-agent']
+        });
+      }
+
+      // Log errors with details
+      if (res.statusCode >= 500) {
+        console.error(`Server error: ${req.method} ${req.path}`, {
+          statusCode: res.statusCode,
+          duration: `${duration}ms`,
+          ip: req.ip
+        });
       }
     });
 

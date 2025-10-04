@@ -39,6 +39,31 @@ export const errorHandler = (
     });
   }
 
+  if (error.code === '23502') { // Not null violation
+    return res.status(400).json({
+      success: false,
+      message: 'Required field missing',
+      code: 'NULL_VIOLATION'
+    });
+  }
+
+  // JWT errors
+  if (error.name === 'JsonWebTokenError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token',
+      code: 'INVALID_TOKEN'
+    });
+  }
+
+  if (error.name === 'TokenExpiredError') {
+    return res.status(401).json({
+      success: false,
+      message: 'Token expired',
+      code: 'TOKEN_EXPIRED'
+    });
+  }
+
   // Default error
   const statusCode = error.statusCode || 500;
   res.status(statusCode).json({
