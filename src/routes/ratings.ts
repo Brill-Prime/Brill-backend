@@ -2,7 +2,7 @@ import express from 'express';
 import { z } from 'zod';
 import { db } from '../db/config';
 import { ratings, users, orders } from '../db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, or } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 
 const router = express.Router();
@@ -11,13 +11,13 @@ const router = express.Router();
 const createRatingSchema = z.object({
   orderId: z.number().int().positive(),
   ratedUserId: z.number().int().positive(),
-  ratingType: z.enum(['DRIVER', 'MERCHANT', 'CONSUMER']),
-  score: z.number().min(1).max(5),
+  ratingType: z.enum(['DRIVER', 'MERCHANT']),
+  rating: z.number().min(1).max(5),
   comment: z.string().optional()
 });
 
 const updateRatingSchema = z.object({
-  score: z.number().min(1).max(5).optional(),
+  rating: z.number().min(1).max(5).optional(),
   comment: z.string().optional()
 });
 
@@ -27,7 +27,6 @@ router.post('/', requireAuth, async (req, res) => {
     const userId = (req.session as any).userId;
     const ratingData = createRatingSchema.parse(req.body);
 
-    // Verify order exists and user is part of it
     const [order] = await db
       .select()
       .from(orders)
@@ -40,31 +39,54 @@ router.post('/', requireAuth, async (req, res) => {
         message: 'Order not found'
       });
     }
+    
+    if (order.customerId !== userId) {
+        return res.status(403).json({
+            success: false,
+            message: 'You are not authorized to rate this order'
+        });
+    }
 
-    // Check if user already rated this order
+    const existingRatingQuery = [
+        eq(ratings.orderId, ratingData.orderId),
+        eq(ratings.customerId, userId)
+    ];
+    if (ratingData.ratingType === 'DRIVER') {
+        existingRatingQuery.push(eq(ratings.driverId, ratingData.ratedUserId));
+    } else { // MERCHANT
+        existingRatingQuery.push(eq(ratings.merchantId, ratingData.ratedUserId));
+    }
+
     const [existingRating] = await db
       .select()
       .from(ratings)
-      .where(and(
-        eq(ratings.orderId, ratingData.orderId),
-        eq(ratings.raterUserId, userId)
-      ))
+      .where(and(...existingRatingQuery))
       .limit(1);
 
     if (existingRating) {
       return res.status(400).json({
         success: false,
-        message: 'You have already rated this order'
+        message: 'You have already submitted a rating for this entity on this order'
       });
+    }
+    
+    const dataToInsert: any = {
+        orderId: ratingData.orderId,
+        rating: ratingData.rating,
+        comment: ratingData.comment,
+        customerId: userId,
+        createdAt: new Date()
+    };
+
+    if (ratingData.ratingType === 'DRIVER') {
+        dataToInsert.driverId = ratingData.ratedUserId;
+    } else { // MERCHANT
+        dataToInsert.merchantId = ratingData.ratedUserId;
     }
 
     const newRatings = await db
       .insert(ratings)
-      .values({
-        ...ratingData,
-        raterUserId: userId,
-        createdAt: new Date()
-      })
+      .values(dataToInsert)
       .returning();
 
     res.status(201).json({
@@ -73,6 +95,9 @@ router.post('/', requireAuth, async (req, res) => {
     });
   } catch (error: any) {
     console.error('Create rating error:', error);
+    if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, message: 'Invalid data', errors: error.issues });
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to create rating'
@@ -88,9 +113,8 @@ router.get('/user/:userId', async (req, res) => {
     const userRatings = await db
       .select({
         id: ratings.id,
-        score: ratings.score,
+        rating: ratings.rating,
         comment: ratings.comment,
-        ratingType: ratings.ratingType,
         createdAt: ratings.createdAt,
         rater: {
           id: users.id,
@@ -99,24 +123,23 @@ router.get('/user/:userId', async (req, res) => {
         }
       })
       .from(ratings)
-      .leftJoin(users, eq(ratings.raterUserId, users.id))
-      .where(eq(ratings.ratedUserId, userId))
+      .leftJoin(users, eq(ratings.customerId, users.id))
+      .where(or(eq(ratings.driverId, userId), eq(ratings.merchantId, userId)))
       .orderBy(desc(ratings.createdAt));
 
-    // Calculate average rating
     const avgResult = await db
       .select({
-        avg: sql<number>`AVG(${ratings.score})`,
+        avg: sql<number>`AVG(${ratings.rating})`.mapWith(Number),
         count: sql<number>`COUNT(*)`
       })
       .from(ratings)
-      .where(eq(ratings.ratedUserId, userId));
+      .where(or(eq(ratings.driverId, userId), eq(ratings.merchantId, userId)));
 
     res.json({
       success: true,
       ratings: userRatings,
       average: avgResult[0]?.avg || 0,
-      total: avgResult[0]?.count || 0
+      total: parseInt(avgResult[0]?.count as any || '0')
     });
   } catch (error: any) {
     console.error('Get ratings error:', error);
@@ -178,19 +201,20 @@ router.put('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    if (rating.raterUserId !== userId) {
+    if (rating.customerId !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this rating'
       });
     }
 
+    if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({ success: false, message: 'No update data provided' });
+    }
+
     const updatedRatings = await db
       .update(ratings)
-      .set({
-        ...updateData,
-        updatedAt: new Date()
-      })
+      .set(updateData)
       .where(eq(ratings.id, ratingId))
       .returning();
 
@@ -200,6 +224,9 @@ router.put('/:id', requireAuth, async (req, res) => {
     });
   } catch (error: any) {
     console.error('Update rating error:', error);
+    if (error instanceof z.ZodError) {
+        return res.status(400).json({ success: false, message: 'Invalid data', errors: error.issues });
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to update rating'
@@ -226,7 +253,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
       });
     }
 
-    if (rating.raterUserId !== userId) {
+    if (rating.customerId !== userId) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this rating'

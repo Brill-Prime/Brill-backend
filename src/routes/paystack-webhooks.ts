@@ -1,8 +1,9 @@
 import express from 'express';
 import crypto from 'crypto';
 import { db } from '../db/config';
-import { transactions, orders, escrows, auditLogs } from '../db/schema';
+import { transactions, orders, escrows, auditLogs, users } from '../db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
+import EmailService from '../services/email';
 
 const router = express.Router();
 
@@ -190,33 +191,81 @@ async function handlePaymentFailure(paymentData: any) {
 }
 
 async function handleTransferSuccess(transferData: any) {
-  const { reference } = transferData;
+  const { reference, amount } = transferData;
 
   try {
+    // Find the transaction by its reference
     const [transaction] = await db
       .select()
       .from(transactions)
       .where(eq(transactions.transactionRef, reference))
       .limit(1);
 
-    if (transaction) {
-      await db
-        .update(transactions)
-        .set({ 
-          status: 'COMPLETED',
-          completedAt: new Date()
-        })
-        .where(eq(transactions.id, transaction.id));
+    if (!transaction) {
+      console.error(`Transaction with reference ${reference} not found.`);
+      return;
     }
 
-    console.log(`Transfer successful: ${reference}`);
+    // Update the transaction status to COMPLETED
+    await db
+      .update(transactions)
+      .set({ 
+        status: 'COMPLETED',
+        completedAt: new Date()
+      })
+      .where(eq(transactions.id, transaction.id));
+
+    // If there is an associated order, find the escrow and update it
+    if (transaction.orderId) {
+      const [escrow] = await db
+        .select()
+        .from(escrows)
+        .where(eq(escrows.orderId, transaction.orderId))
+        .limit(1);
+
+      if (escrow) {
+        await db
+          .update(escrows)
+          .set({ status: 'RELEASED' })
+          .where(eq(escrows.id, escrow.id));
+
+        // Get merchant details for email notification
+        const [merchant] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, escrow.payeeId))
+          .limit(1);
+
+        // Send email to the merchant
+        if (merchant?.email) {
+          await EmailService.sendEmail(
+            merchant.email,
+            'Funds Transferred to Your Account',
+            `<p>Hello ${merchant.fullName},</p><p>We have successfully transferred ₦${(amount / 100).toLocaleString()} to your account for order #${transaction.orderId}.</p><p>Thank you for your business!</p>`
+          );
+        }
+      }
+    }
+
+    // Log the successful transfer in the audit log
+    await db.insert(auditLogs).values({
+      userId: transaction.userId,
+      action: 'TRANSFER_SUCCESS',
+      entityType: 'TRANSACTION',
+      entityId: transaction.id,
+      details: { reference, amount: amount / 100 },
+    });
+
+    console.log(`Transfer successful and escrow released for transaction: ${transaction.id}`);
+
   } catch (error) {
     console.error('Error handling transfer success:', error);
+    // Optionally, you could add more robust error handling here, like retrying or sending an admin alert
   }
 }
 
 async function handleTransferFailure(transferData: any) {
-  const { reference } = transferData;
+  const { reference, reason } = transferData;
 
   try {
     const [transaction] = await db
@@ -225,23 +274,62 @@ async function handleTransferFailure(transferData: any) {
       .where(eq(transactions.transactionRef, reference))
       .limit(1);
 
-    if (transaction) {
-      await db
-        .update(transactions)
-        .set({ 
-          status: 'FAILED'
-        })
-        .where(eq(transactions.id, transaction.id));
+    if (!transaction) {
+      console.error(`Transaction with reference ${reference} not found.`);
+      return;
     }
 
-    console.log(`Transfer failed: ${reference}`);
+    await db
+      .update(transactions)
+      .set({ status: 'FAILED' })
+      .where(eq(transactions.id, transaction.id));
+
+    if (transaction.orderId) {
+      const [escrow] = await db
+        .select()
+        .from(escrows)
+        .where(eq(escrows.orderId, transaction.orderId))
+        .limit(1);
+
+      if (escrow) {
+        await db
+          .update(escrows)
+          .set({ status: 'REFUND_FAILED' })
+          .where(eq(escrows.id, escrow.id));
+
+        const [merchant] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, escrow.payeeId))
+          .limit(1);
+
+        if (merchant?.email) {
+          await EmailService.sendEmail(
+            merchant.email,
+            'Transfer Failed',
+            `<p>Hello ${merchant.fullName},</p><p>The transfer for order #${transaction.orderId} has failed. Please check your account details or contact support.</p><p>Reason: ${reason}</p>`
+          );
+        }
+      }
+    }
+
+    await db.insert(auditLogs).values({
+      userId: transaction.userId,
+      action: 'TRANSFER_FAILURE',
+      entityType: 'TRANSACTION',
+      entityId: transaction.id,
+      details: { reference, reason },
+    });
+
+    console.log(`Transfer failed for transaction: ${transaction.id}`);
+
   } catch (error) {
     console.error('Error handling transfer failure:', error);
   }
 }
 
 async function handleTransferReversed(transferData: any) {
-  const { reference } = transferData;
+  const { reference, reason } = transferData;
 
   try {
     const [transaction] = await db
@@ -250,16 +338,55 @@ async function handleTransferReversed(transferData: any) {
       .where(eq(transactions.transactionRef, reference))
       .limit(1);
 
-    if (transaction) {
-      await db
-        .update(transactions)
-        .set({ 
-          status: 'REFUNDED'
-        })
-        .where(eq(transactions.id, transaction.id));
+    if (!transaction) {
+      console.error(`Transaction with reference ${reference} not found.`);
+      return;
     }
 
-    console.log(`Transfer reversed: ${reference}`);
+    await db
+      .update(transactions)
+      .set({ status: 'REFUNDED' })
+      .where(eq(transactions.id, transaction.id));
+
+    if (transaction.orderId) {
+      const [escrow] = await db
+        .select()
+        .from(escrows)
+        .where(eq(escrows.orderId, transaction.orderId))
+        .limit(1);
+
+      if (escrow) {
+        await db
+          .update(escrows)
+          .set({ status: 'REVERSED' })
+          .where(eq(escrows.id, escrow.id));
+
+        const [merchant] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, escrow.payeeId))
+          .limit(1);
+
+        if (merchant?.email) {
+          await EmailService.sendEmail(
+            merchant.email,
+            'Transfer Reversed',
+            `<p>Hello ${merchant.fullName},</p><p>The transfer for order #${transaction.orderId} has been reversed. Please contact support for more details.</p><p>Reason: ${reason}</p>`
+          );
+        }
+      }
+    }
+
+    await db.insert(auditLogs).values({
+      userId: transaction.userId,
+      action: 'TRANSFER_REVERSED',
+      entityType: 'TRANSACTION',
+      entityId: transaction.id,
+      details: { reference, reason },
+    });
+
+    console.log(`Transfer reversed for transaction: ${transaction.id}`);
+
   } catch (error) {
     console.error('Error handling transfer reversal:', error);
   }

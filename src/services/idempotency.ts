@@ -1,8 +1,8 @@
 
 import { getDatabase, ref, runTransaction } from "firebase/database";
-import app from "../config/firebase";
+import { adminDb } from "../config/firebase-admin";
 
-const db = getDatabase(app);
+const db = adminDb;
 
 /**
  * Ensures that a function is executed only once for a given idempotency key.

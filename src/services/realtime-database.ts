@@ -1,6 +1,6 @@
 
 import { ref, set } from 'firebase/database';
-import { database } from '../config/firebase';
+import { adminDb } from '../config/firebase-admin';
 
 /**
  * Writes data to a specific path in the Firebase Realtime Database.
@@ -10,6 +10,6 @@ import { database } from '../config/firebase';
  * @returns A promise that resolves when the write is complete.
  */
 export const writeData = async (path: string, data: any) => {
-  const dbRef = ref(database, path);
+  const dbRef = ref(adminDb, path);
   await set(dbRef, data);
 };

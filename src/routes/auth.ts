@@ -1,3 +1,4 @@
+
 import express from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -7,8 +8,26 @@ import { eq, and, desc, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import EmailService from '../services/email';
+import { oauth2Client } from '../config/oauth';
+import { google } from 'googleapis';
+import passport from 'passport';
+import { Strategy as FacebookStrategy } from 'passport-facebook';
 
 const router = express.Router();
+
+
+passport.use(new FacebookStrategy({
+    clientID: process.env.FACEBOOK_APP_ID!,
+    clientSecret: process.env.FACEBOOK_APP_SECRET!,
+    callbackURL: "http://localhost:3000/auth/facebook/callback",
+    profileFields: ['id', 'displayName', 'photos', 'email']
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    // Here you would find or create a user in your database
+    // For this example, we'll just return the profile
+    return cb(null, profile);
+  }
+));
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -686,146 +705,6 @@ router.post('/login/social', async (req, res) => {
   }
 });
 
-router.post('/register/social', async (req, res) => {
-  try {
-    const socialData = socialAuthSchema.parse(req.body);
-
-    // Validate provider-specific data
-    if (!socialData.providerUserId || !socialData.email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Provider user ID and email are required'
-      });
-    }
-
-    // Check if user exists with this email
-    const [existingUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, socialData.email))
-      .limit(1);
-
-    let user;
-    let isNewUser = false;
-
-    if (existingUser) {
-      // User exists - treat as login
-      user = existingUser;
-
-      // Update profile picture if provided and not set
-      if (socialData.profilePicture && !user.profilePicture) {
-        await db
-          .update(users)
-          .set({
-            profilePicture: socialData.profilePicture,
-            updatedAt: new Date()
-          })
-          .where(eq(users.id, user.id));
-
-        user.profilePicture = socialData.profilePicture;
-      }
-    } else {
-      // Create new user - social accounts are auto-verified
-      const newUsers = await db
-        .insert(users)
-        .values({
-          email: socialData.email,
-          fullName: socialData.fullName,
-          phone: socialData.phone,
-          role: socialData.role,
-          profilePicture: socialData.profilePicture,
-          isVerified: true, // Social accounts are pre-verified
-          password: null, // No password for social accounts
-          createdAt: new Date()
-        })
-        .returning();
-
-      user = newUsers[0];
-      isNewUser = true;
-
-      // Sync to Firebase Admin if available
-      try {
-        const { adminAuth } = await import('../config/firebase-admin');
-        if (adminAuth) {
-          await adminAuth.createUser({
-            uid: user.id.toString(),
-            email: socialData.email,
-            displayName: socialData.fullName,
-            photoURL: socialData.profilePicture,
-            emailVerified: true
-          });
-        }
-      } catch (firebaseError) {
-        console.warn('Firebase sync failed for social user:', firebaseError);
-        // Continue anyway - Firebase is optional
-      }
-    }
-
-    // Create session
-    (req.session as any).userId = user.id;
-    (req.session as any).user = {
-      id: user.id,
-      userId: user.id.toString(),
-      email: user.email,
-      fullName: user.fullName ?? '',
-      role: user.role ?? '',
-      isVerified: user.isVerified || false,
-      profilePicture: user.profilePicture ?? undefined
-    };
-
-    // Generate JWT tokens
-    const { JWTService } = await import('../services/jwt');
-    const tokenPayload = JWTService.createPayloadFromUser(user);
-    const tokens = JWTService.generateTokenPair(tokenPayload);
-
-    // Generate Firebase custom token if available
-    let firebaseToken;
-    try {
-      const { adminAuth } = await import('../config/firebase-admin');
-      if (adminAuth) {
-        firebaseToken = await adminAuth.createCustomToken(user.id.toString(), {
-          email: user.email,
-          role: user.role,
-          provider: socialData.provider
-        });
-      }
-    } catch (firebaseError) {
-      console.warn('Firebase custom token generation failed:', firebaseError);
-    }
-
-    res.json({
-      success: true,
-      isNewUser,
-      provider: socialData.provider,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        isVerified: user.isVerified || false,
-        profilePicture: user.profilePicture
-      },
-      tokens,
-      firebaseToken
-    });
-  } catch (error: any) {
-    console.error('Social registration error:', error);
-
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid request data',
-        errors: error.issues
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Social registration failed'
-    });
-  }
-});
-
 // Token refresh endpoint
 router.post('/token/refresh', async (req, res) => {
   try {
@@ -998,6 +877,17 @@ router.post('/change-password', async (req, res) => {
   }
 });
 
+router.get('/google', (req, res) => {
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: [
+'https://www.googleapis.com/auth/userinfo.profile',
+'https://www.googleapis.com/auth/userinfo.email'
+]
+  });
+  res.redirect(url);
+});
+
 // Google OAuth callback
 router.get('/google/callback', async (req, res) => {
   try {
@@ -1010,10 +900,35 @@ router.get('/google/callback', async (req, res) => {
       });
     }
 
-    // TODO: Exchange code for tokens with Google OAuth
-    // TODO: Get user info from Google
-    // TODO: Create or update user in database
-    // TODO: Generate JWT and set session
+    const { tokens } = await oauth2Client.getToken(code as string);
+    oauth2Client.setCredentials(tokens);
+
+    const oauth2 = google.oauth2({
+      auth: oauth2Client,
+      version: 'v2'
+    });
+
+    const { data } = await oauth2.userinfo.get();
+
+    if (!data.email || !data.name) {
+      return res.status(400).json({ success: false, message: 'Failed to retrieve user information from Google' });
+    }
+
+    let user = await db.select().from(users).where(eq(users.email, data.email)).limit(1);
+
+    if (!user.length) {
+      const newUser = await db.insert(users).values({
+        email: data.email,
+        fullName: data.name,
+        profilePicture: data.picture,
+        isVerified: true,
+      }).returning();
+      user = newUser;
+    }
+
+    // @ts-ignore
+    req.session.userId = user[0].id;
+
 
     res.redirect('/auth/success?provider=google');
   } catch (error) {
@@ -1022,22 +937,35 @@ router.get('/google/callback', async (req, res) => {
   }
 });
 
-// Facebook OAuth callback
-router.get('/facebook/callback', async (req, res) => {
-  try {
-    const { code } = req.query;
+router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }));
 
-    if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: 'Authorization code required'
-      });
+// Facebook OAuth callback
+router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/login' }), async (req, res) => {
+  try {
+    // @ts-ignore
+    const { id, displayName, emails, photos } = req.user;
+    if (!emails || !emails.length) {
+      return res.status(400).json({ success: false, message: 'Failed to retrieve user information from Facebook' });
+    }
+    const email = emails[0].value;
+    const name = displayName;
+    const picture = photos && photos.length ? photos[0].value : undefined;
+
+    let user = await db.select().from(users).where(eq(users.email, email)).limit(1);
+
+    if (!user.length) {
+      const newUser = await db.insert(users).values({
+        email,
+        fullName: name,
+        profilePicture: picture,
+        isVerified: true,
+      }).returning();
+      user = newUser;
     }
 
-    // TODO: Exchange code for tokens with Facebook OAuth
-    // TODO: Get user info from Facebook
-    // TODO: Create or update user in database
-    // TODO: Generate JWT and set session
+    // @ts-ignore
+    req.session.userId = user[0].id;
+
 
     res.redirect('/auth/success?provider=facebook');
   } catch (error) {

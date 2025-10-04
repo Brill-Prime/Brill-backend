@@ -1,16 +1,18 @@
 
 import * as admin from 'firebase-admin';
+import { getDatabase } from 'firebase-admin/database';
 
-let firebaseAdmin: admin.app.App | null = null;
+let adminApp: admin.app.App | null = null;
 let adminAuth: admin.auth.Auth | null = null;
 let adminDb: admin.firestore.Firestore | null = null;
 let adminStorage: admin.storage.Storage | null = null;
+let adminRealtimeDb: admin.database.Database | null = null;
 
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-      firebaseAdmin = admin.initializeApp({
+      adminApp = admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId: process.env.FIREBASE_PROJECT_ID,
         databaseURL: process.env.FIREBASE_DATABASE_URL,
@@ -27,14 +29,15 @@ try {
     console.warn('⚠️ Firebase Admin not initialized: Set FIREBASE_PROJECT_ID or FIREBASE_SERVICE_ACCOUNT');
   }
 
-  if (firebaseAdmin) {
-    adminAuth = firebaseAdmin.auth();
-    adminDb = firebaseAdmin.firestore();
-    adminStorage = firebaseAdmin.storage();
+  if (adminApp) {
+    adminAuth = adminApp.auth();
+    adminDb = adminApp.firestore();
+    adminStorage = adminApp.storage();
+    adminRealtimeDb = getDatabase(adminApp);
   }
 } catch (error) {
   console.error('❌ Firebase Admin initialization error:', error);
 }
 
-export { adminAuth, adminDb, adminStorage };
-export default firebaseAdmin;
+export { adminAuth, adminDb, adminStorage, adminRealtimeDb };
+export default adminApp;
