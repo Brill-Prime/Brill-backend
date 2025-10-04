@@ -663,7 +663,7 @@ router.post('/login/social', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Social login error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -671,7 +671,7 @@ router.post('/login/social', async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: error.message || 'Social login failed'
@@ -803,7 +803,7 @@ router.post('/register/social', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Social registration error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -811,7 +811,7 @@ router.post('/register/social', async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: error.message || 'Social registration failed'
@@ -836,7 +836,7 @@ router.post('/token/refresh', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Token refresh error:', error);
-    
+
     let statusCode = 401;
     let message = 'Failed to refresh token';
 
@@ -892,7 +892,7 @@ router.post('/change-password', async (req, res) => {
 
     // Get user from session or JWT
     let userId: number | undefined;
-    
+
     if (req.session?.userId) {
       userId = req.session.userId;
     } else {
@@ -991,4 +991,53 @@ router.post('/change-password', async (req, res) => {
   }
 });
 
+// Google OAuth callback
+router.get('/google/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Authorization code required'
+      });
+    }
+
+    // TODO: Exchange code for tokens with Google OAuth
+    // TODO: Get user info from Google
+    // TODO: Create or update user in database
+    // TODO: Generate JWT and set session
+
+    res.redirect('/auth/success?provider=google');
+  } catch (error) {
+    console.error('Google OAuth error:', error);
+    res.redirect('/auth/error?provider=google');
+  }
+});
+
+// Facebook OAuth callback
+router.get('/facebook/callback', async (req, res) => {
+  try {
+    const { code } = req.query;
+
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Authorization code required'
+      });
+    }
+
+    // TODO: Exchange code for tokens with Facebook OAuth
+    // TODO: Get user info from Facebook
+    // TODO: Create or update user in database
+    // TODO: Generate JWT and set session
+
+    res.redirect('/auth/success?provider=facebook');
+  } catch (error) {
+    console.error('Facebook OAuth error:', error);
+    res.redirect('/auth/error?provider=facebook');
+  }
+});
+
+// Export router
 export default router;

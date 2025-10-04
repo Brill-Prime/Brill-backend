@@ -67,7 +67,8 @@ router.post('/', requireAuth, async (req, res) => {
       .where(
         and(
           eq(identityVerifications.userId, userId),
-          eq(identityVerifications.verificationStatus, 'PENDING')
+          eq(identityVerifications.verificationStatus, 'PENDING'),
+          sql`${identityVerifications.deletedAt} IS NULL`
         )
       )
       .limit(1);

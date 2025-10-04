@@ -1,4 +1,3 @@
-
 import express from 'express';
 import crypto from 'crypto';
 import { db } from '../db/config';
@@ -10,7 +9,7 @@ const router = express.Router();
 // Middleware to verify Paystack webhook signature
 const verifyPaystackWebhook = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const secret = process.env.PAYSTACK_WEBHOOK_SECRET || process.env.PAYSTACK_SECRET_KEY;
-  
+
   if (!secret) {
     console.warn('Paystack webhook secret not configured');
     return res.status(500).json({ error: 'Webhook secret not configured' });
@@ -32,7 +31,7 @@ const verifyPaystackWebhook = (req: express.Request, res: express.Response, next
 router.post('/webhook', express.json(), verifyPaystackWebhook, async (req, res) => {
   try {
     const event = req.body;
-    
+
     switch (event.event) {
       case 'charge.success':
         await handlePaymentSuccess(event.data);
@@ -62,7 +61,7 @@ router.post('/webhook', express.json(), verifyPaystackWebhook, async (req, res) 
 
 async function handlePaymentSuccess(paymentData: any) {
   const { reference, amount, customer } = paymentData;
-  
+
   try {
     const [transaction] = await db
       .select()
@@ -149,7 +148,7 @@ async function handlePaymentSuccess(paymentData: any) {
 
 async function handlePaymentFailure(paymentData: any) {
   const { reference } = paymentData;
-  
+
   try {
     const [transaction] = await db
       .select()
@@ -189,7 +188,7 @@ async function handlePaymentFailure(paymentData: any) {
 
 async function handleTransferSuccess(transferData: any) {
   const { reference } = transferData;
-  
+
   try {
     const [transaction] = await db
       .select()
@@ -215,7 +214,7 @@ async function handleTransferSuccess(transferData: any) {
 
 async function handleTransferFailure(transferData: any) {
   const { reference } = transferData;
-  
+
   try {
     const [transaction] = await db
       .select()
@@ -240,7 +239,7 @@ async function handleTransferFailure(transferData: any) {
 
 async function handleTransferReversed(transferData: any) {
   const { reference } = transferData;
-  
+
   try {
     const [transaction] = await db
       .select()
