@@ -3,7 +3,7 @@ import express from 'express';
 import { z } from 'zod';
 import { db } from '../db/config';
 import { identityVerifications, users, auditLogs } from '../db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull } from 'drizzle-orm';
 import { requireAuth, requireAdmin } from '../utils/auth';
 
 const router = express.Router();
