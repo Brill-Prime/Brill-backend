@@ -2,7 +2,7 @@
 import WebSocket from 'ws';
 import { Server } from 'http';
 import jwt from 'jsonwebtoken';
-import firebaseAdmin from '../config/firebase-admin';
+import * as firebaseAdmin from '../config/firebase-admin';
 
 interface AuthenticatedWebSocket extends WebSocket {
   userId?: string;
