@@ -294,7 +294,7 @@ async function handleTransferFailure(transferData: any) {
       if (escrow) {
         await db
           .update(escrows)
-          .set({ status: 'REFUND_FAILED' })
+          .set({ status: 'REFUNDED' })
           .where(eq(escrows.id, escrow.id));
 
         const [merchant] = await db
@@ -357,9 +357,9 @@ async function handleTransferReversed(transferData: any) {
 
       if (escrow) {
         await db
-          .update(escrows)
-          .set({ status: 'REVERSED' })
-          .where(eq(escrows.id, escrow.id));
+      .update(escrows)
+      .set({ status: 'REFUNDED' })
+      .where(eq(escrows.id, escrow.id));
 
         const [merchant] = await db
           .select()
@@ -392,4 +392,4 @@ async function handleTransferReversed(transferData: any) {
   }
 }
 
-export default router;p
+export default router;
