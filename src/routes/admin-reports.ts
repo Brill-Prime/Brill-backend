@@ -1,3 +1,4 @@
+
 import express from 'express';
 import { db } from '../db/config';
 import { users, orders, transactions } from '../db/schema';
@@ -5,6 +6,19 @@ import { eq, desc, count, sum, gte, lte, and, sql } from 'drizzle-orm';
 import { requireAuth, requireAdmin } from '../utils/auth';
 
 const router = express.Router();
+
+// Helper function to convert JSON to CSV
+const jsonToCsv = (json: any[]) => {
+  if (json.length === 0) {
+    return '';
+  }
+  const keys = Object.keys(json[0]);
+  const header = keys.join(',') + '\n';
+  const rows = json
+    .map((row) => keys.map((key) => row[key]).join(','))
+    .join('\n');
+  return header + rows;
+};
 
 // Financial Reports
 router.get('/financial', requireAuth, requireAdmin, async (req, res) => {
@@ -14,7 +28,6 @@ router.get('/financial', requireAuth, requireAdmin, async (req, res) => {
     const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const end = endDate ? new Date(endDate as string) : new Date();
 
-    // Revenue analysis
     const [revenueData] = await db
       .select({
         totalRevenue: sum(transactions.amount),
@@ -28,7 +41,6 @@ router.get('/financial', requireAuth, requireAdmin, async (req, res) => {
         lte(transactions.createdAt, end)
       ));
 
-    // Order analysis
     const [orderData] = await db
       .select({
         totalOrders: count(orders.id),
@@ -127,19 +139,54 @@ router.get('/export/:reportType', requireAuth, requireAdmin, async (req, res) =>
     const { reportType } = req.params;
     const { format = 'csv', startDate, endDate } = req.query;
 
-    const exportData = {
-      reportType,
-      format,
-      dateRange: { startDate, endDate },
-      downloadUrl: `/api/admin/downloads/report_${reportType}_${Date.now()}.${format}`,
-      generatedAt: new Date()
-    };
+    if (format !== 'csv') {
+      return res.status(400).json({ success: false, message: 'Unsupported format. Only CSV is available.' });
+    }
 
-    res.json({
-      success: true,
-      data: exportData,
-      message: 'Report export initiated'
-    });
+    const start = startDate ? new Date(startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate as string) : new Date();
+
+    let data;
+    let fileName = `report_${reportType}_${Date.now()}.csv`;
+
+    if (reportType === 'financial') {
+      const financialData = await db
+        .select({
+          date: sql<string>`DATE(${transactions.createdAt})`,
+          totalRevenue: sum(transactions.amount),
+          totalTransactions: count(transactions.id),
+        })
+        .from(transactions)
+        .where(and(
+          eq(transactions.status, 'COMPLETED'),
+          gte(transactions.createdAt, start),
+          lte(transactions.createdAt, end)
+        ))
+        .groupBy(sql`DATE(${transactions.createdAt})`)
+        .orderBy(desc(sql`DATE(${transactions.createdAt})`));
+      data = financialData;
+    } else if (reportType === 'user-growth') {
+      const userGrowthData = await db
+        .select({
+          date: sql<string>`DATE(${users.createdAt})`,
+          role: users.role,
+          count: count()
+        })
+        .from(users)
+        .where(gte(users.createdAt, start))
+        .groupBy(sql`DATE(${users.createdAt})`, users.role)
+        .orderBy(desc(sql`DATE(${users.createdAt})`));
+      data = userGrowthData;
+    } else {
+      return res.status(404).json({ success: false, message: 'Report type not found.' });
+    }
+
+    const csv = jsonToCsv(data);
+
+    res.header('Content-Type', 'text/csv');
+    res.attachment(fileName);
+    res.send(csv);
+
   } catch (error) {
     console.error('Export reports error:', error);
     res.status(500).json({ success: false, message: 'Failed to export report' });
