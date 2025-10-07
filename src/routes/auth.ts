@@ -101,16 +101,10 @@ router.post('/social-login', async (req, res) => {
       const [newUser] = await db.insert(users).values({
         email: email,
         fullName: name || 'Social User',
-        firebaseUid: uid,
-        role: 'CUSTOMER', // Default role for social logins
+        role: 'CONSUMER', // Default role for social logins
         isVerified: true, // Social accounts are considered verified
       }).returning();
       user = newUser;
-    } else {
-        // If user exists, update firebase UID if it's not already set
-        if (!user.firebaseUid) {
-            await db.update(users).set({ firebaseUid: uid }).where(eq(users.id, user.id));
-        }
     }
 
     const jwtToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
