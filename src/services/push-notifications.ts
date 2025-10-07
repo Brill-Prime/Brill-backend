@@ -1,5 +1,5 @@
 
-import { getMessaging, getToken } from 'firebase-admin/messaging';
+import { getMessaging } from 'firebase-admin/messaging';
 import { adminApp } from '../config/firebase-admin';
 
 /**
@@ -8,14 +8,7 @@ import { adminApp } from '../config/firebase-admin';
  * @returns The device token, or null if permission is denied.
  */
 export const requestPermission = async () => {
-  const messaging = getMessaging(adminApp);
-  // const permission = await Notification.requestPermission(); // This is a browser API
-  const permission = 'granted'; // Placeholder
-
-  if (permission === 'granted') {
-    // const token = await getToken(messaging); // This is not how you get a token in the backend
-    return null;
-  }
-
+  // Push notification tokens are managed on the client, not backend
+  // This is a placeholder for backend push logic
   return null;
 };

@@ -19,8 +19,10 @@ try {
         storageBucket: process.env.FIREBASE_STORAGE_BUCKET
       });
       console.log('✅ Firebase Admin SDK initialized with service account');
+
     } catch (parseError) {
       console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT JSON');
+      console.warn('   For full features, set FIREBASE_SERVICE_ACCOUNT with service account JSON');
     }
   } else if (process.env.FIREBASE_PROJECT_ID) {
     console.warn('⚠️ Firebase Admin initialized with project ID only (limited functionality)');
@@ -39,5 +41,5 @@ try {
   console.error('❌ Firebase Admin initialization error:', error);
 }
 
-export { adminAuth, adminDb, adminStorage, adminRealtimeDb };
-export default adminApp;
+export { adminApp, adminAuth, adminDb, adminStorage, adminRealtimeDb };
+

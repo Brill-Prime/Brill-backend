@@ -1,6 +1,6 @@
 
 import { auth, db, storage } from '../config/firebase';
-import { 
+import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -9,11 +9,11 @@ import {
   sendPasswordResetEmail,
   updateProfile
 } from 'firebase/auth';
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
   updateDoc,
   deleteDoc,
   getDocs,
@@ -23,11 +23,11 @@ import {
   limit,
   onSnapshot
 } from 'firebase/firestore';
-import { 
-  ref, 
-  uploadBytes, 
-  getDownloadURL, 
-  deleteObject 
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject
 } from 'firebase/storage';
 
 export class WebFirebaseService {
@@ -210,8 +210,8 @@ export class WebFirebaseService {
   // Storage methods
   static async uploadFile(file: File, fileName: string, folder: string = 'uploads') {
     try {
-      const storageRef = ref(storage, `${folder}/${fileName}`);
-      const snapshot = await uploadBytes(storageRef, file);
+      const fileRef = storageRef(storage, `${folder}/${fileName}`);
+      const snapshot = await uploadBytes(fileRef, file);
       const downloadURL = await getDownloadURL(snapshot.ref);
       return downloadURL;
     } catch (error) {
@@ -221,7 +221,7 @@ export class WebFirebaseService {
 
   static async deleteFile(filePath: string) {
     try {
-      const fileRef = ref(storage, filePath);
+      const fileRef = storageRef(storage, filePath);
       await deleteObject(fileRef);
       return true;
     } catch (error) {
