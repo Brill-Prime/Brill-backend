@@ -14,6 +14,7 @@ export const kycStatusEnum = pgEnum('kyc_status', ['PENDING', 'UNDER_REVIEW', 'A
 export const driverTierEnum = pgEnum('driver_tier', ['STANDARD', 'PREMIUM', 'ELITE']);
 export const supportStatusEnum = pgEnum('support_status', ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
 export const escrowStatusEnum = pgEnum('escrow_status', ['HELD', 'RELEASED', 'REFUNDED', 'DISPUTED']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['DUE', 'PAID', 'OVERDUE']);
 
 // ---------------- Users ----------------
 export const users = pgTable("users", {
@@ -149,6 +150,53 @@ export const orders = pgTable("orders", {
   positiveTotalAmount: check("positive_total_amount", sql`${table.totalAmount} > 0`)
 }));
 
+// ---------------- Invoices ----------------
+export const invoices = pgTable("invoices", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").references(() => orders.id).notNull(),
+  invoiceNumber: text("invoice_number").notNull().unique(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  status: invoiceStatusEnum("status").default('DUE'),
+  dueDate: timestamp("due_date").notNull(),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+}, (table) => ({
+  orderIdIdx: index("invoices_order_id_idx").on(table.orderId),
+  invoiceNumberIdx: index("invoices_invoice_number_idx").on(table.invoiceNumber)
+}));
+
+// ---------------- Driver Profiles ----------------
+export const driverProfiles = pgTable("driver_profiles", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull().unique(),
+    vehicleDetails: jsonb("vehicle_details"),
+    drivingLicense: text("driving_license"),
+    tier: driverTierEnum("tier").default('STANDARD'),
+    availability: boolean("availability").default(true)
+});
+
+// ---------------- Merchant Profiles ----------------
+export const merchantProfiles = pgTable("merchant_profiles", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull().unique(),
+    businessName: text("business_name").notNull(),
+    businessAddress: text("business_address"),
+    kycStatus: kycStatusEnum("kyc_status").default('PENDING')
+});
+
+// ---------------- Ratings ----------------
+export const ratings = pgTable("ratings", {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").references(() => orders.id).notNull(),
+    raterId: integer("rater_id").references(() => users.id).notNull(),
+    ratedId: integer("rated_id").references(() => users.id).notNull(),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    createdAt: timestamp("created_at").defaultNow()
+});
+
+
 // ---------------- Relations ----------------
 export const usersRelations = relations(users, ({ many, one }) => ({
   ordersAsCustomer: many(orders, { relationName: "customer" }),
@@ -162,7 +210,9 @@ export const usersRelations = relations(users, ({ many, one }) => ({
     fields: [users.id],
     references: [merchantProfiles.userId]
   }),
-  commodities: many(commodities)
+  commodities: many(commodities),
+  ratingsGiven: many(ratings, { relationName: "rater" }),
+  ratingsReceived: many(ratings, { relationName: "rated" })
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
@@ -193,6 +243,40 @@ export const productsRelations = relations(products, ({ one, many }) => ({
   ratings: many(ratings)
 }));
 
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  customer: one(users, {
+    fields: [orders.customerId],
+    references: [users.id],
+    relationName: "customer"
+  }),
+  merchant: one(users, {
+    fields: [orders.merchantId],
+    references: [users.id],
+    relationName: "merchant"
+  }),
+  driver: one(users, {
+    fields: [orders.driverId],
+    references: [users.id],
+    relationName: "driver"
+  }),
+  invoices: many(invoices),
+  ratings: many(ratings)
+}));
+
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+  order: one(orders, {
+    fields: [invoices.orderId],
+    references: [orders.id]
+  })
+}));
+
+export const ratingsRelations = relations(ratings, ({ one }) => ({
+    rater: one(users, { fields: [ratings.raterId], references: [users.id], relationName: "rater" }),
+    rated: one(users, { fields: [ratings.ratedId], references: [users.id], relationName: "rated" }),
+    order: one(orders, { fields: [ratings.orderId], references: [orders.id] })
+}));
+
+
 // ---------------- Validation Schemas ----------------
 export const insertUserSchema = z.object({
   email: z.string().email(),
@@ -215,4 +299,5 @@ export type Commodity = typeof commodities.$inferSelect;
 export type NewCommodity = typeof commodities.$inferInsert;
 export type Product = typeof products.$inferSelect;
 export type NewProduct = typeof products.$inferInsert;
-
+export type Invoice = typeof invoices.$inferSelect;
+export type NewInvoice = typeof invoices.$inferInsert;
