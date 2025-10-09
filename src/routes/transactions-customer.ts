@@ -1,0 +1,6 @@
+import express, { Request, Response } from 'express';
+const router = express.Router();
+router.get('/api/transactions/customer', (req: Request, res: Response) => {
+  res.status(501).json({ message: 'Not yet implemented' });
+});
+export default router;

@@ -69,6 +69,20 @@ import paystackWebhooksRouter from './routes/paystack-webhooks';
 import escrowStatusRoutes from './routes/escrow-status';
 import { startEscrowAutoReleaseService } from './services/escrow-auto-release';
 import driverOrdersRoutes from './routes/driver-orders';
+import merchantCommunicationRouter from './routes/merchant-communication';
+import merchantInventoryRouter from './routes/merchant-inventory';
+import commoditiesRouter from './routes/commodities';
+import profileAddressesRouter from './routes/profile-addresses';
+import profilePaymentMethodsRouter from './routes/profile-payment-methods';
+import profileChangePasswordRouter from './routes/profile-change-password';
+import profilePrivacySettingsRouter from './routes/profile-privacy-settings';
+import adminKycVerificationRouter from './routes/admin-kyc-verification';
+import adminEscrowManagementRouter from './routes/admin-escrow-management';
+import adminModerationRouter from './routes/admin-moderation';
+import adminControlCenterRouter from './routes/admin-control-center';
+import callsRouter from './routes/calls';
+import transactionsMerchantRouter from './routes/transactions-merchant';
+import transactionsCustomerRouter from './routes/transactions-customer';
 
 const app = express();
 const server = createServer(app);
@@ -293,6 +307,21 @@ app.use('/api/escrow-status', escrowStatusRoutes);
 
 // Register driver-orders route
 app.use('/api/driver', driverOrdersRoutes);
+
+app.use('/api', merchantCommunicationRouter);
+app.use('/api', merchantInventoryRouter);
+app.use('/api', commoditiesRouter);
+app.use('/api', profileAddressesRouter);
+app.use('/api', profilePaymentMethodsRouter);
+app.use('/api', profileChangePasswordRouter);
+app.use('/api', profilePrivacySettingsRouter);
+app.use('/api', adminKycVerificationRouter);
+app.use('/api', adminEscrowManagementRouter);
+app.use('/api', adminModerationRouter);
+app.use('/api', adminControlCenterRouter);
+app.use('/api', callsRouter);
+app.use('/api', transactionsMerchantRouter);
+app.use('/api', transactionsCustomerRouter);
 
 // Basic route
 app.get('/', (req, res) => {
