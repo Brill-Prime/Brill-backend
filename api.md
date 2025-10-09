@@ -55,6 +55,11 @@ This document provides an overview of all available API endpoints in the Brill b
 - `GET /api/products/:id` — Get product
 - `PUT /api/products/:id` — Update product
 - `DELETE /api/products/:id` — Delete product
+- `POST /api/commodities` — Create a new commodity
+- `GET /api/commodities` — Get all commodities
+- `GET /api/commodities/:id` — Get a single commodity by ID
+- `PUT /api/commodities/:id` — Update a commodity by ID
+- `DELETE /api/commodities/:id` — Delete a commodity by ID
 
 ---
 
@@ -199,20 +204,41 @@ This document provides an overview of all available API endpoints in the Brill b
 
 ---
 
+## Toll Gates
+- `POST /api/toll-gates` - Create a new toll gate (Admin only)
+- `GET /api/toll-gates` - List all toll gates
+- `GET /api/toll-gates/:id` - Get toll gate details
+- `PUT /api/toll-gates/:id` - Update toll gate details (Admin only)
+
+---
+
+## Configuration
+- `GET /api/config/app` - Get app configuration
+- `GET /api/config/payment` - Get payment configuration
+- `GET /api/config/delivery` - Get delivery configuration
+- `PUT /api/config/app` - Update app configuration (admin only)
+
+---
+
 ## Miscellaneous
-- `/api/identity-verifications/*` — Identity verification endpoints
-- `/api/verification-documents/*` — Verification document endpoints
-- `/api/toll-gates/*` — Toll gate endpoints
-- `/api/search/*` — Search endpoints
-- `/api/upload/*` — File upload endpoints
-- `/api/geolocation/*` — Geolocation endpoints
-- `/api/cart/*` — Cart endpoints
-- `/api/checkout/*` — Checkout endpoints
+- `GET /api/cart` — Get user's cart
+- `POST /api/cart` — Add item to cart
+- `PUT /api/cart/:id` — Update cart item quantity
+- `DELETE /api/cart/:id` — Remove item from cart
+- `DELETE /api/cart` — Clear entire cart
+- `GET /api/checkout/preview` — Preview checkout summary
+- `POST /api/checkout` — Place order
 - `/api/firebase/*` — Firebase endpoints
-- `/api/web/*` — Web-specific endpoints
+- `/api/geolocation/*` — Geolocation endpoints
+- `/api/identity-verifications/*` — Identity verification endpoints
+- `/api/push-notifications/*` — Push notification endpoints
 - `/api/realtime/*` — Real-time communication endpoints
 - `/api/realtime-examples/*` — Real-time example endpoints
-- `/api/push-notifications/*` — Push notification endpoints
+- `/api/search/*` — Search endpoints
+- `/api/upload/*` — File upload endpoints
+- `/api/verification-documents/*` — Verification document endpoints
+- `/api/web/*` — Web-specific endpoints
+
 
 ---
 
