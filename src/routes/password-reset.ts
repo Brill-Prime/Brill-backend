@@ -2,6 +2,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { PasswordResetService } from '../services/passwordReset';
+import { PasswordValidator } from '../utils/password-validator';
 
 const router = express.Router();
 
@@ -80,6 +81,26 @@ router.post('/verify-code', async (req, res) => {
 router.post('/complete', async (req, res) => {
   try {
     const { email, resetCode, newPassword } = completeResetSchema.parse(req.body);
+
+    // Validate password strength
+    const passwordValidation = PasswordValidator.validate(newPassword);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password does not meet security requirements',
+        errors: passwordValidation.errors,
+        strength: passwordValidation.strength
+      });
+    }
+
+    // Check if password is compromised
+    const isCompromised = await PasswordValidator.checkCompromised(newPassword);
+    if (isCompromised) {
+      return res.status(400).json({
+        success: false,
+        message: 'This password has been found in data breaches. Please choose a different password.'
+      });
+    }
 
     const success = await PasswordResetService.completePasswordReset(email, resetCode, newPassword);
 

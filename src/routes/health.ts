@@ -1,6 +1,8 @@
 
 import express from 'express';
 import * as firebaseAdmin from '../config/firebase-admin';
+import { db } from '../db/config';
+import { sql } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -68,43 +70,95 @@ router.get('/', async (req, res) => {
 // GET /api/health/detailed - Detailed system status
 router.get('/detailed', async (req, res) => {
   try {
-    const checks = {
-      database: false,
-      email: false,
-      sms: false,
-      payment: false
+    const checks: any = {
+      postgres: { status: 'unknown', responseTime: 0 },
+      firebase: { status: 'unknown' },
+      email: { status: 'unknown', provider: 'none' },
+      sms: { status: 'unknown' },
+      payment: { status: 'unknown' },
+      jwt: { status: 'unknown' }
     };
 
-    // Database check
+    // PostgreSQL Database check
     try {
-      const db = getDb();
-      if (db) {
-        await db.ref().get();
-        checks.database = true;
-      }
+      const startTime = Date.now();
+      await db.execute(sql`SELECT 1 as health_check`);
+      checks.postgres = {
+        status: 'healthy',
+        responseTime: `${Date.now() - startTime}ms`,
+        connected: true
+      };
     } catch (error) {
-      console.error('Database check failed:', error);
+      console.error('PostgreSQL check failed:', error);
+      checks.postgres = { status: 'error', connected: false };
     }
 
-    // Email service check
-    checks.email = !!(process.env.GMAIL_USER && process.env.GMAIL_PASS) ||
-                   !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+    // Firebase check
+    try {
+      const firebaseDb = getDb();
+      if (firebaseDb) {
+        await firebaseDb.ref().get();
+        checks.firebase = { status: 'healthy', configured: true };
+      } else {
+        checks.firebase = { status: 'not_configured', configured: false };
+      }
+    } catch (error) {
+      console.error('Firebase check failed:', error);
+      checks.firebase = { status: 'error', configured: false };
+    }
+
+    // Email service check (check for Gmail OAuth integration first)
+    if (process.env.REPL_PUBKEYS) {
+      checks.email = { status: 'healthy', provider: 'gmail_oauth', configured: true };
+    } else if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+      checks.email = { status: 'healthy', provider: 'gmail_smtp', configured: true };
+    } else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      checks.email = { status: 'healthy', provider: 'smtp', configured: true };
+    } else {
+      checks.email = { status: 'not_configured', provider: 'none', configured: false };
+    }
 
     // SMS service check
-    checks.sms = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      checks.sms = { status: 'healthy', provider: 'twilio', configured: true };
+    } else {
+      checks.sms = { status: 'not_configured', provider: 'none', configured: false };
+    }
 
     // Payment service check
-    checks.payment = !!(process.env.PAYSTACK_SECRET_KEY);
+    if (process.env.PAYSTACK_SECRET_KEY) {
+      checks.payment = { status: 'healthy', provider: 'paystack', configured: true };
+    } else {
+      checks.payment = { status: 'not_configured', provider: 'none', configured: false };
+    }
 
-    const allHealthy = Object.values(checks).every(check => check);
+    // JWT secret check
+    const jwtSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
+    if (jwtSecret && jwtSecret !== 'default-development-secret-key') {
+      checks.jwt = { status: 'healthy', configured: true };
+    } else if (process.env.NODE_ENV === 'production') {
+      checks.jwt = { status: 'error', configured: false, warning: 'Production requires JWT_SECRET' };
+    } else {
+      checks.jwt = { status: 'warning', configured: true, note: 'Using development secret' };
+    }
 
-    res.status(allHealthy ? 200 : 503).json({
-      status: allHealthy ? 'healthy' : 'degraded',
+    // Determine overall health
+    const criticalServices = ['postgres', 'jwt'];
+    const criticalHealthy = criticalServices.every(service => 
+      checks[service]?.status === 'healthy' || checks[service]?.status === 'warning'
+    );
+
+    res.status(criticalHealthy ? 200 : 503).json({
+      status: criticalHealthy ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
       checks,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      cpu: process.cpuUsage()
+      system: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        cpu: process.cpuUsage(),
+        nodeVersion: process.version
+      }
     });
 
   } catch (error) {

@@ -7,6 +7,7 @@ import { users, mfaTokens, auditLogs } from '../db/schema';
 import { eq, and, isNull, or, ilike, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth, requireAdmin, requireOwnershipOrAdmin, hashPassword } from '../utils/auth';
+import { PasswordValidator } from '../utils/password-validator';
 
 const router = express.Router();
 
@@ -40,6 +41,26 @@ const querySchema = z.object({
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const userData = createUserSchema.parse(req.body);
+
+    // Validate password strength
+    const passwordValidation = PasswordValidator.validate(userData.password);
+    if (!passwordValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password does not meet security requirements',
+        errors: passwordValidation.errors,
+        strength: passwordValidation.strength
+      });
+    }
+
+    // Check if password is compromised
+    const isCompromised = await PasswordValidator.checkCompromised(userData.password);
+    if (isCompromised) {
+      return res.status(400).json({
+        success: false,
+        message: 'This password has been found in data breaches. Please choose a different password.'
+      });
+    }
 
     // Check if user exists
     const [existingUser] = await db

@@ -36,8 +36,6 @@ export async function checkAndReleaseExpiredEscrows() {
         if (escrow) {
           console.log(`Auto-releasing escrow for order ${order.orderNumber}`);
 
-          // TODO: Implement escrow auto-release functionality
-          // Order is already DELIVERED, just release the escrow
           await db
             .update(escrows)
             .set({ status: 'RELEASED', releasedAt: new Date() })
