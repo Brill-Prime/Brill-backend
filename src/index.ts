@@ -93,6 +93,8 @@ import kycRouter from './routes/kyc';
 import profileAddressRoutes from './routes/profile-addresses';
 import profilePaymentMethodRoutes from './routes/profile-payment-methods';
 import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
+import profileRouter from './routes/profile';
+import walletRouter from './routes/wallet';
 
 const app = express();
 const server = createServer(app);
@@ -346,6 +348,10 @@ app.use('/api/kyc', kycRouter);
 app.use('/api/profile/addresses', profileAddressRoutes);
 app.use('/api/profile/payment-methods', profilePaymentMethodRoutes);
 app.use('/api/profile/privacy-settings', profilePrivacySettingsRoutes);
+app.use('/api/profile', profileRouter);
+
+// Wallet routes
+app.use('/api/wallet', walletRouter);
 
 // Basic route
 app.get('/', (req, res) => {
