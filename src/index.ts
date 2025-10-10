@@ -1,4 +1,3 @@
-
 import 'dotenv/config';
 import './config/firebase-admin';
 import cors from 'cors';
@@ -91,6 +90,9 @@ import favoritesRouter from './routes/favorites';
 import locationRouter from './routes/location';
 import conversationsRouter from './routes/conversations';
 import kycRouter from './routes/kyc';
+import profileAddressRoutes from './routes/profile-addresses';
+import profilePaymentMethodRoutes from './routes/profile-payment-methods';
+import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
 
 const app = express();
 const server = createServer(app);
@@ -339,6 +341,11 @@ app.use('/api/favorites', favoritesRouter);
 app.use('/api/location', locationRouter);
 app.use('/api/conversations', conversationsRouter);
 app.use('/api/kyc', kycRouter);
+
+// Mount profile routes in app
+app.use('/api/profile/addresses', profileAddressRoutes);
+app.use('/api/profile/payment-methods', profilePaymentMethodRoutes);
+app.use('/api/profile/privacy-settings', profilePrivacySettingsRoutes);
 
 // Basic route
 app.get('/', (req, res) => {
