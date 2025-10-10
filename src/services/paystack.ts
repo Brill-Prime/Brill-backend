@@ -47,7 +47,7 @@ class PaystackService {
     try {
       switch (event.event) {
         case 'charge.success':
-          await this.handleSuccessfulPayment(event.data);
+          await this.handleSuccessfulPayment(event.data.reference);
           break;
         case 'charge.failed':
           await this.handleFailedPayment(event.data);
@@ -70,42 +70,38 @@ class PaystackService {
     }
   }
 
-  // Handle successful payment
-  private static async handleSuccessfulPayment(data: any): Promise<void> {
+  // Handle successful payment with escrow
+  static async handleSuccessfulPayment(reference: string): Promise<void> {
     try {
-      // Find transaction by reference
+      // Verify transaction with Paystack
+      const verification = await this.verifyTransaction(reference);
+
+      if (!verification.status) {
+        throw new Error('Payment verification failed');
+      }
+
+      // Update transaction in database
       const [transaction] = await db
         .select()
         .from(transactions)
-        .where(eq(transactions.transactionRef, data.reference))
+        .where(eq(transactions.transactionRef, reference))
         .limit(1);
 
       if (!transaction) {
-        console.warn(`Transaction not found for reference: ${data.reference}`);
-        return;
+        throw new Error('Transaction not found');
       }
 
-      // Update transaction status
-      const existingMetadata = transaction.metadata as Record<string, any> | null;
-      const metadata = (typeof existingMetadata === 'object' && existingMetadata !== null) ? existingMetadata : {};
-      
-      const updatedTransaction = await db
+      await db
         .update(transactions)
         .set({
           status: 'COMPLETED',
-          paymentGatewayRef: data.reference,
-          paystackTransactionId: data.id.toString(),
-          completedAt: new Date(data.paid_at || data.created_at),
-          metadata: {
-            ...metadata,
-            paystack: data,
-            completedVia: 'webhook'
-          } as any
+          completedAt: new Date(),
+          paymentGatewayRef: verification.data.reference,
+          metadata: verification.data
         })
-        .where(eq(transactions.id, transaction.id))
-        .returning();
+        .where(eq(transactions.id, transaction.id));
 
-      // Update associated order and create escrow if exists
+      // If this is an order payment, create escrow to hold funds
       if (transaction.orderId) {
         const [order] = await db
           .select()
@@ -113,54 +109,36 @@ class PaystackService {
           .where(eq(orders.id, transaction.orderId))
           .limit(1);
 
-        if (order) {
-          await db
-            .update(orders)
-            .set({
-              status: 'CONFIRMED',
-              updatedAt: new Date()
-            })
-            .where(eq(orders.id, transaction.orderId));
+        if (order && order.merchantId) {
+          // Create escrow - funds are held until delivery is confirmed
+          // Payout will be triggered to merchant's bank account when escrow is released
+          await db.insert(escrows).values({
+            orderId: order.id,
+            payerId: transaction.userId,
+            payeeId: order.merchantId,
+            amount: transaction.amount,
+            status: 'HELD',
+            transactionRef: reference,
+            paystackEscrowId: verification.data.id?.toString()
+          });
 
-          // Create escrow to hold funds
-          const existingEscrow = await db
-            .select()
-            .from(escrows)
-            .where(and(
-              eq(escrows.orderId, order.id),
-              isNull(escrows.deletedAt)
-            ))
-            .limit(1);
-
-          if (!existingEscrow.length) {
-            await db.insert(escrows).values({
+          // Log audit trail
+          await db.insert(auditLogs).values({
+            userId: transaction.userId,
+            action: 'ESCROW_CREATED',
+            entityType: 'ESCROW',
+            entityId: order.id,
+            details: {
               orderId: order.id,
-              payerId: order.customerId,
-              payeeId: order.merchantId!,
               amount: transaction.amount,
-              status: 'HELD',
-              paystackEscrowId: data.reference,
-              transactionRef: transaction.transactionRef,
-              createdAt: new Date()
-            });
-          }
+              merchantId: order.merchantId,
+              paymentMethod: transaction.metadata?.paymentMethod || 'card'
+            }
+          });
         }
       }
 
-      // Log audit event
-      await db.insert(auditLogs).values({
-        userId: transaction.userId,
-        action: 'PAYMENT_SUCCESS',
-        entityType: 'TRANSACTION',
-        entityId: transaction.id,
-        details: {
-          reference: data.reference,
-          amount: data.amount / 100, // Paystack amounts are in kobo
-          paystackId: data.id
-        }
-      });
-
-      console.log(`Payment successful for transaction ${transaction.id}`);
+      console.log('Payment processed successfully with escrow:', reference);
     } catch (error) {
       console.error('Error handling successful payment:', error);
       throw error;
@@ -183,7 +161,7 @@ class PaystackService {
 
       const existingMetadata = transaction.metadata as Record<string, any> | null;
       const metadata = (typeof existingMetadata === 'object' && existingMetadata !== null) ? existingMetadata : {};
-      
+
       await db
         .update(transactions)
         .set({
@@ -198,7 +176,7 @@ class PaystackService {
           } as any
         })
         .where(eq(transactions.id, transaction.id));
-      
+
       // Update associated order to failed if exists
       if (transaction.orderId) {
         await db
@@ -503,8 +481,8 @@ class PaystackService {
         return { success: false, error: result.message || 'Failed to resolve account' };
       }
 
-      return { 
-        success: true, 
+      return {
+        success: true,
         account_name: result.data?.account_name,
         account_number: result.data?.account_number
       };

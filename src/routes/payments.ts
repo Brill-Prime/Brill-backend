@@ -1,10 +1,9 @@
-
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../utils/auth';
 import PaystackService from '../services/paystack';
 import { db } from '../db/config';
-import { transactions, users, auditLogs } from '../db/schema';
+import { transactions, users, auditLogs, orders } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 const router = express.Router();
@@ -268,6 +267,77 @@ router.post('/refund', requireAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to process refund request'
+    });
+  }
+});
+
+// POST /api/payments/initiate - Initialize payment
+router.post('/initiate', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { orderId, amount, paymentMethod, bankAccountId } = req.body;
+
+    if (!orderId || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID and amount are required'
+      });
+    }
+
+    // Validate payment method
+    if (!paymentMethod || !['card', 'bank_transfer'].includes(paymentMethod)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment method. Use "card" or "bank_transfer"'
+      });
+    }
+
+    // Get order details
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Verify order belongs to user
+    if (order.customerId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized'
+      });
+    }
+
+    // Initialize payment with Paystack (supports both card and bank transfer)
+    const paymentData = await PaystackService.initializeTransaction(
+      amount,
+      req.user!.email,
+      {
+        orderId,
+        userId,
+        paymentMethod,
+        bankAccountId
+      }
+    );
+
+    res.json({
+      success: true,
+      data: paymentData,
+      message: paymentMethod === 'bank_transfer'
+        ? 'Bank transfer details generated. Complete payment to proceed.'
+        : 'Card payment initiated. Complete payment to proceed.'
+    });
+  } catch (error) {
+    console.error('Payment initiation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to initiate payment'
     });
   }
 });

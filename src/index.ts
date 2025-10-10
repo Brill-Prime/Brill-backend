@@ -350,7 +350,7 @@ app.use('/api/profile/payment-methods', profilePaymentMethodRoutes);
 app.use('/api/profile/privacy-settings', profilePrivacySettingsRoutes);
 app.use('/api/profile', profileRouter);
 
-// Wallet routes
+// Deprecated wallet routes (returns 410 Gone)
 app.use('/api/wallet', walletRouter);
 
 // Basic route
