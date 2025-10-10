@@ -87,6 +87,10 @@ import transactionsMerchantRouter from './routes/transactions-merchant';
 import transactionsCustomerRouter from './routes/transactions-customer';
 import biometricAuthRouter from './routes/biometric-auth';
 import mapTrackingRouter from './routes/map-tracking';
+import favoritesRouter from './routes/favorites';
+import locationRouter from './routes/location';
+import conversationsRouter from './routes/conversations';
+import kycRouter from './routes/kyc';
 
 const app = express();
 const server = createServer(app);
@@ -331,6 +335,10 @@ app.use(transactionsCustomerRouter);
 app.use('/api/biometric', biometricAuthRouter);
 app.use('/api/calls', callsRouter);
 app.use('/api/map', mapTrackingRouter);
+app.use('/api/favorites', favoritesRouter);
+app.use('/api/location', locationRouter);
+app.use('/api/conversations', conversationsRouter);
+app.use('/api/kyc', kycRouter);
 
 // Basic route
 app.get('/', (req, res) => {
