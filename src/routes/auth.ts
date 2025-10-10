@@ -48,6 +48,19 @@ router.post('/register', async (req, res) => {
       createdAt: new Date()
     }).returning();
 
+    // If email not verified, send verification email via Firebase
+    if (!email_verified) {
+      try {
+        const actionCodeSettings = {
+          url: `${process.env.FRONTEND_URL || 'https://brillprime.com'}/verify-email`,
+          handleCodeInApp: true
+        };
+        await admin.auth().generateEmailVerificationLink(email, actionCodeSettings);
+      } catch (emailError) {
+        console.error('Email verification link generation failed:', emailError);
+      }
+    }
+
     // Generate JWT for API access
     const token = jwt.sign({ id: newUser.id, role: newUser.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
     const refreshToken = jwt.sign({ id: newUser.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
@@ -62,7 +75,8 @@ router.post('/register', async (req, res) => {
         firebaseUid,
         token,
         refreshToken,
-        user: userProfile
+        user: userProfile,
+        emailVerificationSent: !email_verified
       } 
     });
 
@@ -283,6 +297,83 @@ router.put('/deactivate', requireAuth, async (req, res) => {
       .where(eq(users.id, userId));
 
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+
+// Request password reset via Firebase
+router.post('/request-password-reset', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Generate password reset link via Firebase
+    const actionCodeSettings = {
+      url: `${process.env.FRONTEND_URL || 'https://brillprime.com'}/reset-password`,
+      handleCodeInApp: true
+    };
+
+    const resetLink = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
+
+    // Optionally send via your own email service for branding
+    // Uncomment if you want to use your custom email templates
+    // const EmailService = (await import('../services/email')).default;
+    // await EmailService.sendPasswordResetEmail(email, email.split('@')[0], resetLink);
+
+    res.json({
+      success: true,
+      message: 'Password reset email sent successfully',
+      // Don't send the link in production for security
+      ...(process.env.NODE_ENV === 'development' && { resetLink })
+    });
+  } catch (error: any) {
+    console.error('Password reset error:', error);
+    
+    // Don't reveal if user exists
+    res.json({
+      success: true,
+      message: 'If an account exists with that email, a password reset link has been sent.'
+    });
+  }
+});
+
+// Send email verification link
+router.post('/send-verification-email', requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already verified'
+      });
+    }
+
+    const actionCodeSettings = {
+      url: `${process.env.FRONTEND_URL || 'https://brillprime.com'}/verify-email`,
+      handleCodeInApp: true
+    };
+
+    const verificationLink = await admin.auth().generateEmailVerificationLink(user.email, actionCodeSettings);
+
+    res.json({
+      success: true,
+      message: 'Verification email sent successfully',
+      ...(process.env.NODE_ENV === 'development' && { verificationLink })
+    });
+  } catch (error: any) {
+    console.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send verification email'
+    });
+  }
+});
+
 
     if (user && user.email) {
         await EmailService.sendEmail(
