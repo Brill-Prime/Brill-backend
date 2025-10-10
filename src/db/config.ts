@@ -1,4 +1,3 @@
-
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
@@ -15,6 +14,7 @@ const databaseUrl = process.env.DATABASE_URL;
 // Database connection pool with production-ready settings
 const pool = new Pool({
   connectionString: databaseUrl,
+  // Handle SSL configuration for production (Render)
   ssl: databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
   max: 20, // Maximum number of clients in the pool
   min: 5, // Minimum number of clients in the pool

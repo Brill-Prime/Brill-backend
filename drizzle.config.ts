@@ -10,7 +10,7 @@ export default {
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL!,
-    ssl: false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
   },
   verbose: true,
   strict: true,
