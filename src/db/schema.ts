@@ -19,6 +19,7 @@ export const invoiceStatusEnum = pgEnum('invoice_status', ['DUE', 'PAID', 'OVERD
 // ---------------- Users ----------------
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
+  firebaseUid: text("firebase_uid").unique(),
   email: text("email").unique().notNull(),
   password: text("password"),
   fullName: text("full_name").notNull(),
@@ -47,6 +48,7 @@ export const users = pgTable("users", {
   deletedAt: timestamp("deleted_at")
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
+  firebaseUidIdx: index("users_firebase_uid_idx").on(table.firebaseUid),
   roleIdx: index("users_role_idx").on(table.role),
   paystackRecipientCodeIdx: index("users_paystack_recipient_idx").on(table.paystackRecipientCode)
 }));
@@ -174,12 +176,22 @@ export const driverProfiles = pgTable("driver_profiles", {
     vehicleType: text("vehicle_type"),
     vehiclePlate: text("vehicle_plate"),
     vehicleModel: text("vehicle_model"),
+    vehicleColor: text("vehicle_color"),
+    licenseNumber: text("license_number"),
+    vehicleRegistration: text("vehicle_registration"),
     drivingLicense: text("driving_license"),
+    currentLocation: jsonb("current_location"),
+    verificationLevel: text("verification_level"),
+    backgroundCheckStatus: text("background_check_status"),
+    kycData: jsonb("kyc_data").default('{}'),
     tier: driverTierEnum("tier").default('STANDARD'),
     availability: boolean("availability").default(true),
     isAvailable: boolean("is_available").default(true),
     isOnline: boolean("is_online").default(false),
     verificationStatus: verificationStatusEnum("verification_status").default('PENDING'),
+    kycStatus: kycStatusEnum("kyc_status").default('PENDING'),
+    kycApprovedAt: timestamp("kyc_approved_at"),
+    kycApprovedBy: integer("kyc_approved_by").references(() => users.id),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
     deletedAt: timestamp("deleted_at")
