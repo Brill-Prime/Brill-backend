@@ -1,10 +1,10 @@
-modules = ["nodejs-20"]
+modules = ["nodejs-20", "python-3.11"]
 [nix]
 channel = "stable-25_05"
 
 [agent]
 expertMode = true
-integrations = ["javascript_database:1.0.0"]
+integrations = ["javascript_database:1.0.0", "google-mail:1.0.0"]
 
 [workflows]
 runButton = "Project"
@@ -68,6 +68,10 @@ args = "npm start"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 41565
+externalPort = 3000
 
 [deployment]
 deploymentTarget = "vm"

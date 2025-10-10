@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { getUncachableGmailClient, getGmailUserEmail } from './gmail-client';
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_PASS = process.env.GMAIL_PASS;
@@ -19,10 +20,28 @@ interface EmailTemplate {
   text?: string;
 }
 
+// Check if Gmail OAuth is available (Replit integration)
+let gmailOAuthEnabled = false;
+let gmailUserEmail = '';
+
+async function initializeGmailOAuth() {
+  try {
+    await getUncachableGmailClient();
+    gmailUserEmail = await getGmailUserEmail();
+    gmailOAuthEnabled = true;
+    console.log('✅ Gmail OAuth enabled for email notifications');
+  } catch (error) {
+    gmailOAuthEnabled = false;
+  }
+}
+
+// Initialize Gmail OAuth on startup
+initializeGmailOAuth();
+
 // Check environment variables - email service is optional for development
 const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
 
-if (!emailEnabled) {
+if (!emailEnabled && !gmailOAuthEnabled) {
   console.warn('⚠️ Email service disabled: Email credentials not set');
 }
 
@@ -53,6 +72,17 @@ class EmailService {
     text?: string,
     attachments?: any[]
   ): Promise<EmailResult> {
+    // Try Gmail OAuth first (Replit integration)
+    if (gmailOAuthEnabled) {
+      try {
+        return await this.sendEmailViaGmailAPI(to, subject, html, text);
+      } catch (error: any) {
+        console.error('Gmail OAuth send failed, falling back to SMTP:', error);
+        gmailOAuthEnabled = false;
+      }
+    }
+
+    // Fallback to SMTP
     if (!emailEnabled || !transporter) {
       console.warn('Email service not available - email not sent');
       return {
@@ -83,6 +113,51 @@ class EmailService {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  // Send email via Gmail API (OAuth)
+  private static async sendEmailViaGmailAPI(
+    to: string | string[],
+    subject: string,
+    html: string,
+    text?: string
+  ): Promise<EmailResult> {
+    try {
+      const gmail = await getUncachableGmailClient();
+      const recipients = Array.isArray(to) ? to.join(', ') : to;
+      const fromEmail = gmailUserEmail || 'noreply@brillprime.com';
+
+      const message = [
+        `From: BrillPrime <${fromEmail}>`,
+        `To: ${recipients}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        html
+      ].join('\n');
+
+      const encodedMessage = Buffer.from(message)
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/, '');
+
+      const result = await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: {
+          raw: encodedMessage,
+        },
+      });
+
+      return {
+        success: true,
+        messageId: result.data.id || undefined
+      };
+    } catch (error: any) {
+      console.error('Failed to send email via Gmail API:', error);
+      throw error;
     }
   }
 
