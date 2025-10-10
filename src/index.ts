@@ -85,6 +85,7 @@ import adminControlCenterRouter from './routes/admin-control-center';
 import callsRouter from './routes/calls';
 import transactionsMerchantRouter from './routes/transactions-merchant';
 import transactionsCustomerRouter from './routes/transactions-customer';
+import biometricAuthRouter from './routes/biometric-auth';
 
 const app = express();
 const server = createServer(app);
@@ -326,6 +327,7 @@ app.use('/api', adminControlCenterRouter);
 app.use('/api', callsRouter);
 app.use(transactionsMerchantRouter);
 app.use(transactionsCustomerRouter);
+app.use('/api/biometric', biometricAuthRouter);
 
 // Basic route
 app.get('/', (req, res) => {
