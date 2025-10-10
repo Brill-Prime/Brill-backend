@@ -1091,6 +1091,166 @@ router.post('/:id/mark-ready', requireAuth, requireRole(['MERCHANT', 'ADMIN']), 
     const currentUser = req.user!;
     
     if (isNaN(orderId)) {
+
+
+// GET /api/orders/:id/eta - Get advanced ETA calculation for order
+router.get('/:id/eta', requireAuth, async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.id);
+    const currentUser = req.user!;
+
+    if (isNaN(orderId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid order ID'
+      });
+    }
+
+    // Check if order exists
+    const existingOrder = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.id, orderId),
+        isNull(orders.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingOrder.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const order = existingOrder[0];
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && 
+        currentUser.id !== order.customerId && 
+        currentUser.id !== order.merchantId && 
+        currentUser.id !== order.driverId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Validate order has delivery coordinates
+    if (!order.deliveryLatitude || !order.deliveryLongitude) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order does not have delivery coordinates'
+      });
+    }
+
+    // Get driver's active route if available
+    const driverActiveOrders = order.driverId ? await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.driverId, order.driverId),
+        or(
+          eq(orders.status, 'ACCEPTED'),
+          eq(orders.status, 'PICKED_UP'),
+          eq(orders.status, 'IN_TRANSIT')
+        )!,
+        isNull(orders.deletedAt)
+      ))
+      .orderBy(orders.acceptedAt) : [];
+
+    // Get driver location
+    let driverLocation = null;
+    if (order.driverId) {
+      const [driver] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, order.driverId))
+        .limit(1);
+
+      if (driver?.currentLocation) {
+        const loc = driver.currentLocation as any;
+        driverLocation = {
+          latitude: parseFloat(loc.latitude || '0'),
+          longitude: parseFloat(loc.longitude || '0')
+        };
+      }
+    }
+
+    if (!driverLocation) {
+      // Use pickup address as fallback
+      if (order.pickupAddress) {
+        return res.json({
+          success: true,
+          data: {
+            orderId,
+            status: order.status,
+            message: 'Driver location not available. ETA will be calculated once driver accepts the order.',
+            estimatedDelivery: order.confirmationDeadline
+          }
+        });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Driver location not available for ETA calculation'
+        });
+      }
+    }
+
+    // Import route optimization service
+    const RouteOptimizationService = (await import('../services/routeOptimization')).default;
+
+    // Build route points from active orders
+    const routePoints = driverActiveOrders.map((o, index) => ({
+      id: o.id,
+      orderId: o.id,
+      address: o.deliveryAddress,
+      latitude: parseFloat(o.deliveryLatitude || '0'),
+      longitude: parseFloat(o.deliveryLongitude || '0'),
+      priority: o.id === orderId ? 'HIGH' as const : 'MEDIUM' as const,
+      estimatedDuration: 5, // 5 minutes per delivery
+      type: o.status === 'ACCEPTED' ? 'PICKUP' as const : 'DELIVERY' as const
+    }));
+
+    // Calculate ETA for this specific order
+    const deliveryPoint = routePoints.find(p => p.orderId === orderId);
+    
+    if (deliveryPoint) {
+      const etaResult = await RouteOptimizationService.calculateDeliveryETA(
+        driverLocation,
+        deliveryPoint,
+        routePoints
+      );
+
+      res.json({
+        success: true,
+        data: {
+          orderId,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          eta: etaResult.eta.toISOString(),
+          estimatedTravelTime: Math.round(etaResult.estimatedTravelTime),
+          confidence: Math.round(etaResult.confidence * 100),
+          driverLocation,
+          routePosition: routePoints.findIndex(p => p.orderId === orderId) + 1,
+          totalStops: routePoints.length
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Unable to calculate ETA for this order'
+      });
+    }
+  } catch (error) {
+    console.error('Calculate ETA error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate ETA'
+    });
+  }
+});
+
       return res.status(400).json({
         success: false,
         message: 'Invalid order ID'
@@ -1702,6 +1862,55 @@ router.get('/:id/tracking', requireAuth, async (req, res) => {
       });
     }
 
+    // Calculate ETA if driver is assigned and order is in progress
+    let etaInfo = null;
+    if (order.driverId && order.deliveryLatitude && order.deliveryLongitude && 
+        (order.status === 'ACCEPTED' || order.status === 'PICKED_UP' || order.status === 'IN_TRANSIT')) {
+      
+      // Get driver's current location
+      const [driverProfile] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, order.driverId))
+        .limit(1);
+
+      if (driverProfile) {
+        // Import services dynamically
+        const GeolocationService = (await import('../services/geolocation')).default;
+        
+        try {
+          // Calculate distance and duration
+          const driverLocation = driverProfile.currentLocation as any;
+          
+          if (driverLocation?.latitude && driverLocation?.longitude) {
+            const distance = await GeolocationService.calculateDistance(
+              { latitude: parseFloat(driverLocation.latitude), longitude: parseFloat(driverLocation.longitude) },
+              { latitude: parseFloat(order.deliveryLatitude), longitude: parseFloat(order.deliveryLongitude) },
+              'driving'
+            );
+
+            if (distance) {
+              // Calculate ETA with traffic consideration
+              const trafficMultiplier = 1.3;
+              const adjustedDuration = distance.duration * trafficMultiplier;
+              const estimatedArrival = new Date(Date.now() + adjustedDuration * 60000);
+
+              etaInfo = {
+                distance: Math.round(distance.distance * 10) / 10, // km, 1 decimal
+                duration: Math.round(adjustedDuration), // minutes
+                estimatedArrival: estimatedArrival.toISOString(),
+                confidence: distance.distance < 5 ? 0.9 : distance.distance < 15 ? 0.8 : 0.7,
+                trafficAdjusted: true
+              };
+            }
+          }
+        } catch (etaError) {
+          console.error('ETA calculation error:', etaError);
+          // Continue without ETA if calculation fails
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -1715,7 +1924,8 @@ router.get('/:id/tracking', requireAuth, async (req, res) => {
         acceptedAt: order.acceptedAt,
         pickedUpAt: order.pickedUpAt,
         deliveredAt: order.deliveredAt,
-        estimatedDelivery: order.confirmationDeadline
+        confirmationDeadline: order.confirmationDeadline,
+        eta: etaInfo
       }
     });
   } catch (error) {
