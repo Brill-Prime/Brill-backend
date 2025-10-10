@@ -524,4 +524,152 @@ router.post('/:id/verify', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/merchants/nearby - Get nearby merchants
+router.get('/nearby', async (req, res) => {
+  try {
+    const { lat, lng, radius = '10', type } = req.query;
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitude and longitude are required'
+      });
+    }
+
+    const latitude = parseFloat(lat as string);
+    const longitude = parseFloat(lng as string);
+    const radiusKm = parseFloat(radius as string);
+
+    if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusKm)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid coordinates or radius'
+      });
+    }
+
+    // Get all active merchants with coordinates
+    let conditions = [
+      eq(merchantProfiles.isActive, true),
+      eq(merchantProfiles.isVerified, true),
+      isNull(merchantProfiles.deletedAt)
+    ];
+
+    if (type) {
+      conditions.push(eq(merchantProfiles.businessType, type as string));
+    }
+
+    const merchants = await db
+      .select({
+        id: merchantProfiles.id,
+        userId: merchantProfiles.userId,
+        businessName: merchantProfiles.businessName,
+        businessType: merchantProfiles.businessType,
+        businessAddress: merchantProfiles.businessAddress,
+        latitude: merchantProfiles.latitude,
+        longitude: merchantProfiles.longitude,
+        description: merchantProfiles.description,
+        isOpen: merchantProfiles.isOpen,
+        user: {
+          fullName: users.fullName,
+          averageRating: users.averageRating,
+          totalRatings: users.totalRatings
+        }
+      })
+      .from(merchantProfiles)
+      .innerJoin(users, eq(merchantProfiles.userId, users.id))
+      .where(and(...conditions));
+
+    // Calculate distance for each merchant
+    const GeolocationService = await import('../services/geolocation');
+    const nearbyMerchants = merchants
+      .filter(m => m.latitude && m.longitude)
+      .map(m => {
+        const distance = GeolocationService.default.haversineDistance(
+          { latitude, longitude },
+          { latitude: parseFloat(m.latitude!), longitude: parseFloat(m.longitude!) }
+        );
+        return { ...m, distance };
+      })
+      .filter(m => m.distance <= radiusKm)
+      .sort((a, b) => a.distance - b.distance);
+
+    res.json({
+      success: true,
+      data: nearbyMerchants,
+      count: nearbyMerchants.length
+    });
+  } catch (error) {
+    console.error('Get nearby merchants error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get nearby merchants'
+    });
+  }
+});
+
+// GET /api/merchants/nearby/live - Get nearby merchants with live locations
+router.get('/nearby/live', requireAuth, async (req, res) => {
+  try {
+    const { lat, lng, radius = '10' } = req.query;
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: 'Latitude and longitude are required'
+      });
+    }
+
+    const latitude = parseFloat(lat as string);
+    const longitude = parseFloat(lng as string);
+    const radiusKm = parseFloat(radius as string);
+
+    const merchants = await db
+      .select({
+        id: merchantProfiles.id,
+        userId: merchantProfiles.userId,
+        businessName: merchantProfiles.businessName,
+        businessType: merchantProfiles.businessType,
+        latitude: merchantProfiles.latitude,
+        longitude: merchantProfiles.longitude,
+        isOpen: merchantProfiles.isOpen,
+        user: {
+          fullName: users.fullName,
+          averageRating: users.averageRating
+        }
+      })
+      .from(merchantProfiles)
+      .innerJoin(users, eq(merchantProfiles.userId, users.id))
+      .where(and(
+        eq(merchantProfiles.isActive, true),
+        eq(merchantProfiles.isOpen, true),
+        isNull(merchantProfiles.deletedAt)
+      ));
+
+    const GeolocationService = await import('../services/geolocation');
+    const nearbyMerchants = merchants
+      .filter(m => m.latitude && m.longitude)
+      .map(m => {
+        const distance = GeolocationService.default.haversineDistance(
+          { latitude, longitude },
+          { latitude: parseFloat(m.latitude!), longitude: parseFloat(m.longitude!) }
+        );
+        return { ...m, distance };
+      })
+      .filter(m => m.distance <= radiusKm)
+      .sort((a, b) => a.distance - b.distance);
+
+    res.json({
+      success: true,
+      data: nearbyMerchants,
+      count: nearbyMerchants.length
+    });
+  } catch (error) {
+    console.error('Get nearby live merchants error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get nearby live merchants'
+    });
+  }
+});
+
 export default router;

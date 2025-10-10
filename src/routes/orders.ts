@@ -1875,4 +1875,50 @@ router.get('/active', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/orders/summary - Get order summary/statistics
+router.get('/summary', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+
+    const conditions = [isNull(orders.deletedAt)];
+
+    // Filter by user role
+    if (currentUser.role === 'CONSUMER') {
+      conditions.push(eq(orders.customerId, currentUser.id));
+    } else if (currentUser.role === 'MERCHANT') {
+      conditions.push(eq(orders.merchantId, currentUser.id));
+    } else if (currentUser.role === 'DRIVER') {
+      conditions.push(eq(orders.driverId, currentUser.id));
+    }
+
+    const allOrders = await db
+      .select()
+      .from(orders)
+      .where(and(...conditions));
+
+    const summary = {
+      total: allOrders.length,
+      pending: allOrders.filter(o => o.status === 'PENDING').length,
+      confirmed: allOrders.filter(o => o.status === 'CONFIRMED').length,
+      accepted: allOrders.filter(o => o.status === 'ACCEPTED').length,
+      pickedUp: allOrders.filter(o => o.status === 'PICKED_UP').length,
+      inTransit: allOrders.filter(o => o.status === 'IN_TRANSIT').length,
+      delivered: allOrders.filter(o => o.status === 'DELIVERED').length,
+      cancelled: allOrders.filter(o => o.status === 'CANCELLED').length,
+      totalValue: allOrders.reduce((sum, o) => sum + parseFloat(o.totalAmount), 0)
+    };
+
+    res.json({
+      success: true,
+      data: summary
+    });
+  } catch (error) {
+    console.error('Get order summary error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get order summary'
+    });
+  }
+});
+
 export default router;
