@@ -36,7 +36,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev"
+args = "node dist/index.js"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -68,10 +68,6 @@ args = "npm start"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 37579
-externalPort = 3000
 
 [deployment]
 deploymentTarget = "vm"
