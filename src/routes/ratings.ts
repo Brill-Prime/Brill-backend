@@ -277,4 +277,106 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/ratings/driver/:driverId - Get driver ratings
+router.get('/driver/:driverId', requireAuth, async (req, res) => {
+  try {
+    const driverId = parseInt(req.params.driverId);
+    
+    if (isNaN(driverId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid driver ID'
+      });
+    }
+
+    const driverRatings = await db
+      .select({
+        rating: ratings,
+        order: {
+          id: orders.id,
+          orderNumber: orders.orderNumber
+        },
+        rater: {
+          id: users.id,
+          fullName: users.fullName
+        }
+      })
+      .from(ratings)
+      .leftJoin(orders, eq(ratings.orderId, orders.id))
+      .leftJoin(users, eq(ratings.raterId, users.id))
+      .where(eq(ratings.ratedId, driverId))
+      .orderBy(desc(ratings.createdAt));
+
+    const avgRating = driverRatings.length > 0
+      ? driverRatings.reduce((sum, r) => sum + r.rating.rating, 0) / driverRatings.length
+      : 0;
+
+    res.json({
+      success: true,
+      data: driverRatings,
+      summary: {
+        averageRating: avgRating.toFixed(2),
+        totalRatings: driverRatings.length
+      }
+    });
+  } catch (error) {
+    console.error('Get driver ratings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve driver ratings'
+    });
+  }
+});
+
+// GET /api/ratings/merchant/:merchantId - Get merchant ratings
+router.get('/merchant/:merchantId', requireAuth, async (req, res) => {
+  try {
+    const merchantId = parseInt(req.params.merchantId);
+    
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    const merchantRatings = await db
+      .select({
+        rating: ratings,
+        order: {
+          id: orders.id,
+          orderNumber: orders.orderNumber
+        },
+        rater: {
+          id: users.id,
+          fullName: users.fullName
+        }
+      })
+      .from(ratings)
+      .leftJoin(orders, eq(ratings.orderId, orders.id))
+      .leftJoin(users, eq(ratings.raterId, users.id))
+      .where(eq(ratings.ratedId, merchantId))
+      .orderBy(desc(ratings.createdAt));
+
+    const avgRating = merchantRatings.length > 0
+      ? merchantRatings.reduce((sum, r) => sum + r.rating.rating, 0) / merchantRatings.length
+      : 0;
+
+    res.json({
+      success: true,
+      data: merchantRatings,
+      summary: {
+        averageRating: avgRating.toFixed(2),
+        totalRatings: merchantRatings.length
+      }
+    });
+  } catch (error) {
+    console.error('Get merchant ratings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve merchant ratings'
+    });
+  }
+});
+
 export default router;

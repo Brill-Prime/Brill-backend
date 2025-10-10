@@ -626,4 +626,70 @@ router.post('/:id/reopen', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// PUT /api/support-tickets/:id - Update support ticket
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const ticketId = parseInt(req.params.id);
+    const currentUser = req.user!;
+    const { status, priority, category, assignedTo } = req.body;
+
+    if (isNaN(ticketId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ticket ID'
+      });
+    }
+
+    // Check if ticket exists
+    const existingTicket = await db
+      .select()
+      .from(supportTickets)
+      .where(and(
+        eq(supportTickets.id, ticketId),
+        isNull(supportTickets.deletedAt)
+      ))
+      .limit(1);
+
+    if (!existingTicket.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Support ticket not found'
+      });
+    }
+
+    // Only admin or ticket owner can update
+    if (currentUser.role !== 'ADMIN' && existingTicket[0].userId !== currentUser.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    const updateData: any = {};
+    if (status) updateData.status = status;
+    if (priority) updateData.priority = priority;
+    if (category) updateData.category = category;
+    if (assignedTo !== undefined) updateData.assignedTo = assignedTo;
+    updateData.updatedAt = new Date();
+
+    const updatedTicket = await db
+      .update(supportTickets)
+      .set(updateData)
+      .where(eq(supportTickets.id, ticketId))
+      .returning();
+
+    res.json({
+      success: true,
+      message: 'Support ticket updated successfully',
+      data: updatedTicket[0]
+    });
+  } catch (error) {
+    console.error('Update support ticket error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update support ticket'
+    });
+  }
+});
+
 export default router;

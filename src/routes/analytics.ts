@@ -8,6 +8,72 @@ import { requireAuth, requireAdmin, requireRole } from '../utils/auth';
 
 const router = express.Router();
 
+// GET /api/analytics/summary - Get analytics summary
+router.get('/summary', requireAuth, requireRole(['MERCHANT', 'ADMIN']), async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date();
+
+    const conditions = [
+      gte(orders.createdAt, startDate),
+      lte(orders.createdAt, endDate),
+      isNull(orders.deletedAt)
+    ];
+
+    if (currentUser.role !== 'ADMIN') {
+      conditions.push(eq(orders.merchantId, currentUser.id));
+    }
+
+    const ordersData = await db
+      .select({
+        totalOrders: count(orders.id),
+        totalRevenue: sum(orders.totalAmount),
+        avgOrderValue: avg(orders.totalAmount)
+      })
+      .from(orders)
+      .where(and(...conditions));
+
+    const transactionConditions = [
+      gte(transactions.createdAt, startDate),
+      lte(transactions.createdAt, endDate),
+      isNull(transactions.deletedAt)
+    ];
+
+    if (currentUser.role !== 'ADMIN') {
+      transactionConditions.push(eq(transactions.userId, currentUser.id));
+    }
+
+    const transactionsData = await db
+      .select({
+        totalTransactions: count(transactions.id),
+        totalAmount: sum(transactions.amount)
+      })
+      .from(transactions)
+      .where(and(...transactionConditions));
+
+    res.json({
+      success: true,
+      data: {
+        orders: ordersData[0] || { totalOrders: 0, totalRevenue: 0, avgOrderValue: 0 },
+        transactions: transactionsData[0] || { totalTransactions: 0, totalAmount: 0 },
+        period: {
+          startDate,
+          endDate
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get analytics summary error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve analytics summary'
+    });
+  }
+});
+
+export default router;
+
 const analyticsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
