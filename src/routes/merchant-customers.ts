@@ -1,6 +1,7 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 const router = express.Router();
-router.get('/merchants/:id/customers', (req: Request, res: Response) => {
-  res.status(501).json({ message: 'Not yet implemented' });
-});
+
+// This endpoint has been moved to merchants.ts
+// GET /api/merchants/:id/customers is now implemented there
+
 export default router;

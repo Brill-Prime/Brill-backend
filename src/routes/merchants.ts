@@ -672,4 +672,180 @@ router.get('/nearby/live', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/merchants/:id/orders - Get merchant orders
+router.get('/:id/orders', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.id);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const status = req.query.status as string;
+
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    const offset = (page - 1) * limit;
+    const conditions = [
+      eq(orders.merchantId, merchantId),
+      isNull(orders.deletedAt)
+    ];
+
+    if (status) {
+      conditions.push(eq(orders.status, status as any));
+    }
+
+    const merchantOrders = await db
+      .select()
+      .from(orders)
+      .where(and(...conditions))
+      .orderBy(desc(orders.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const totalCount = await db
+      .select({ count: orders.id })
+      .from(orders)
+      .where(and(...conditions));
+
+    res.json({
+      success: true,
+      data: merchantOrders,
+      pagination: {
+        page,
+        limit,
+        total: totalCount.length,
+        pages: Math.ceil(totalCount.length / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get merchant orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve merchant orders'
+    });
+  }
+});
+
+// GET /api/merchants/:id/customers - Get merchant customers
+router.get('/:id/customers', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.id);
+
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Get unique customers from orders
+    const customers = await db
+      .selectDistinct({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        phone: users.phone,
+        profilePicture: users.profilePicture,
+        totalOrders: orders.id
+      })
+      .from(orders)
+      .innerJoin(users, eq(orders.customerId, users.id))
+      .where(and(
+        eq(orders.merchantId, merchantId),
+        isNull(orders.deletedAt),
+        isNull(users.deletedAt)
+      ))
+      .orderBy(desc(orders.createdAt));
+
+    res.json({
+      success: true,
+      data: customers,
+      count: customers.length
+    });
+  } catch (error) {
+    console.error('Get merchant customers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve merchant customers'
+    });
+  }
+});
+
+// GET /api/merchants/:id/analytics - Get merchant analytics
+router.get('/:id/analytics', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.id);
+
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Check permissions
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Get merchant orders
+    const merchantOrders = await db
+      .select()
+      .from(orders)
+      .where(and(
+        eq(orders.merchantId, merchantId),
+        isNull(orders.deletedAt)
+      ));
+
+    const analytics = {
+      totalOrders: merchantOrders.length,
+      completedOrders: merchantOrders.filter(o => o.status === 'DELIVERED').length,
+      pendingOrders: merchantOrders.filter(o => o.status === 'PENDING' || o.status === 'CONFIRMED').length,
+      cancelledOrders: merchantOrders.filter(o => o.status === 'CANCELLED').length,
+      totalRevenue: merchantOrders
+        .filter(o => o.status === 'DELIVERED')
+        .reduce((sum, o) => sum + parseFloat(o.totalAmount), 0),
+      averageOrderValue: merchantOrders.length > 0 
+        ? merchantOrders.reduce((sum, o) => sum + parseFloat(o.totalAmount), 0) / merchantOrders.length 
+        : 0
+    };
+
+    res.json({
+      success: true,
+      data: analytics
+    });
+  } catch (error) {
+    console.error('Get merchant analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve merchant analytics'
+    });
+  }
+});
+
 export default router;
