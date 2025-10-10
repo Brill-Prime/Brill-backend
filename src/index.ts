@@ -86,7 +86,6 @@ import callsRouter from './routes/calls';
 import transactionsMerchantRouter from './routes/transactions-merchant';
 import transactionsCustomerRouter from './routes/transactions-customer';
 import biometricAuthRouter from './routes/biometric-auth';
-import callsRouter from './routes/calls';
 import mapTrackingRouter from './routes/map-tracking';
 
 const app = express();
