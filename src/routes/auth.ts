@@ -108,12 +108,12 @@ router.post('/login', async (req, res) => {
 // Social Login/Registration
 router.post('/social-login', async (req, res) => {
   try {
-    const { provider, firebaseUid, email, fullName, photoUrl, role } = req.body;
+    const { provider, firebaseUid, email, fullName, photoUrl, role, idToken } = req.body;
 
-    if (!provider || !firebaseUid || !email) {
+    if (!provider || !email) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Provider, firebaseUid, and email are required.' 
+        message: 'Provider and email are required.' 
       });
     }
 
@@ -123,6 +123,28 @@ router.post('/social-login', async (req, res) => {
         success: false, 
         message: 'Invalid provider. Must be google, apple, or facebook.' 
       });
+    }
+
+    // Verify Firebase ID token if provided
+    let verifiedFirebaseUid = firebaseUid;
+    if (idToken) {
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        verifiedFirebaseUid = decodedToken.uid;
+        
+        // Ensure email matches
+        if (decodedToken.email !== email) {
+          return res.status(400).json({
+            success: false,
+            message: 'Email mismatch in token verification'
+          });
+        }
+      } catch (error) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid Firebase token'
+        });
+      }
     }
 
     let [user] = await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))).limit(1);
@@ -139,23 +161,31 @@ router.post('/social-login', async (req, res) => {
       }).returning();
       user = newUser;
     } else {
-      // Update profile picture if provided
+      // Update profile picture and last login
+      const updateData: any = { lastLoginAt: new Date() };
       if (photoUrl && !user.profilePicture) {
-        await db.update(users).set({ profilePicture: photoUrl }).where(eq(users.id, user.id));
+        updateData.profilePicture = photoUrl;
+      }
+      await db.update(users).set(updateData).where(eq(users.id, user.id));
+      if (photoUrl && !user.profilePicture) {
         user.profilePicture = photoUrl;
       }
     }
 
     const jwtToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
-
-    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+    const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
 
     const { password, ...userProfile } = user;
 
     res.json({
       success: true,
       message: 'Social login successful',
-      data: { token: jwtToken, user: userProfile },
+      data: { 
+        token: jwtToken,
+        refreshToken,
+        user: userProfile,
+        firebaseUid: verifiedFirebaseUid
+      },
     });
   } catch (error) {
     console.error('Social login error:', error);
@@ -234,6 +264,121 @@ router.put('/deactivate', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Deactivation error:', error);
     res.status(500).json({ success: false, message: 'Failed to deactivate user' });
+  }
+});
+
+// Verify Firebase token and sync user
+router.post('/verify-firebase-token', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Firebase ID token is required'
+      });
+    }
+
+    // Verify Firebase token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+
+    // Find or create user
+    let [user] = await db.select().from(users)
+      .where(and(eq(users.email, decodedToken.email!), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      // Create new user from Firebase token
+      const [newUser] = await db.insert(users).values({
+        email: decodedToken.email!,
+        fullName: decodedToken.name || decodedToken.email!.split('@')[0],
+        role: 'CONSUMER',
+        isVerified: decodedToken.email_verified || false,
+        profilePicture: decodedToken.picture || null,
+        createdAt: new Date()
+      }).returning();
+      user = newUser;
+    } else {
+      await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+    }
+
+    // Generate JWT tokens
+    const jwtToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
+    const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
+
+    const { password, ...userProfile } = user;
+
+    res.json({
+      success: true,
+      message: 'Firebase token verified successfully',
+      data: {
+        token: jwtToken,
+        refreshToken,
+        user: userProfile,
+        firebaseUid: decodedToken.uid
+      }
+    });
+  } catch (error) {
+    console.error('Firebase token verification error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired Firebase token'
+    });
+  }
+});
+
+// Refresh JWT token
+router.post('/refresh-token', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    // Verify refresh token
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET!) as any;
+
+    if (decoded.type !== 'refresh') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid refresh token'
+      });
+    }
+
+    // Get user
+    const [user] = await db.select().from(users)
+      .where(and(eq(users.id, decoded.id), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Generate new tokens
+    const newToken = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
+    const newRefreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: {
+        token: newToken,
+        refreshToken: newRefreshToken
+      }
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired refresh token'
+    });
   }
 });
 

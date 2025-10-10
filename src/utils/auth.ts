@@ -3,7 +3,8 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { db } from "../db/config";
 import { users } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
+import admin from 'firebase-admin'; // Import Firebase Admin SDK
 
 // JWT Secret from environment
 const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || 'default-development-secret-key';
@@ -90,33 +91,41 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
       // Try Firebase Admin token verification first
       try {
-        const { adminAuth } = await import('../config/firebase-admin');
-        if (adminAuth) {
-          const decodedToken = await adminAuth.verifyIdToken(token);
-          
-          // Find or create user in local database
-          const [user] = await db
-            .select()
-            .from(users)
-            .where(eq(users.email, decodedToken.email || ''))
-            .limit(1);
+        const decodedToken = await admin.auth().verifyIdToken(token);
 
-          if (user) {
-            req.user = {
-              id: user.id,
-              userId: user.id.toString(),
-              fullName: user.fullName,
-              email: user.email,
-              role: user.role || 'CONSUMER',
-              isVerified: user.isVerified || decodedToken.email_verified || false,
-              profilePicture: user.profilePicture || undefined
-            };
-            return next();
-          }
+        // Find or create user in local database
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(and(eq(users.email, decodedToken.email || ''), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (user) {
+          req.user = {
+            id: user.id,
+            userId: user.id.toString(),
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role || 'CONSUMER',
+            isVerified: user.isVerified || decodedToken.email_verified || false,
+            profilePicture: user.profilePicture || undefined
+          };
+          return next();
+        } else {
+          // If user not found in DB, return unauthorized
+          return res.status(401).json({
+            success: false,
+            message: "User not found in our system.",
+            code: "USER_NOT_FOUND"
+          });
         }
-      } catch (firebaseError) {
+      } catch (firebaseError: any) {
         // If Firebase verification fails, try JWT verification
-        console.log('Firebase token verification failed, trying JWT');
+        if (firebaseError.code === 'auth/id-token-expired' || firebaseError.code === 'auth/id-token-invalid') {
+          console.log('Firebase token verification failed or expired, trying JWT');
+        } else {
+          console.error('Firebase auth error:', firebaseError);
+        }
       }
 
       // Fallback to JWT token verification
@@ -127,7 +136,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         const user = await db
           .select()
           .from(users)
-          .where(eq(users.id, decoded.id || decoded.userId))
+          .where(and(eq(users.id, decoded.id || decoded.userId), isNull(users.deletedAt)))
           .limit(1);
 
         if (!user.length || !user[0].isVerified) {
@@ -172,6 +181,98 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     });
   }
 };
+
+// Optional authentication middleware (for routes that don't strictly require login)
+export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Check for session-based auth first
+    if (req.session?.userId) {
+      req.user = {
+        id: req.session.userId,
+        userId: req.session.userId.toString(),
+        fullName: req.session.user?.fullName || '',
+        email: req.session.user?.email || '',
+        role: req.session.user?.role || 'CONSUMER',
+        isVerified: req.session.user?.isVerified || false,
+        profilePicture: req.session.user?.profilePicture
+      };
+      return next();
+    }
+
+    // Check for JWT token in headers
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+
+      // Try Firebase Admin token verification first
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+
+        // Find user in local database
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(and(eq(users.email, decodedToken.email || ''), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (user) {
+          req.user = {
+            id: user.id,
+            userId: user.id.toString(),
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role || 'CONSUMER',
+            isVerified: user.isVerified || decodedToken.email_verified || false,
+            profilePicture: user.profilePicture || undefined
+          };
+          // Do not return here, allow JWT to be checked as well if Firebase fails
+        }
+      } catch (firebaseError: any) {
+        // If Firebase verification fails, log it and continue to JWT verification
+        if (firebaseError.code === 'auth/id-token-expired' || firebaseError.code === 'auth/id-token-invalid') {
+          console.log('Firebase token verification failed or expired in optionalAuth, trying JWT');
+        } else {
+          console.error('Firebase auth error in optionalAuth:', firebaseError);
+        }
+      }
+
+      // Fallback to JWT token verification
+      try {
+        const decoded: any = await verifyToken(token);
+
+        // Verify user still exists and is active
+        const user = await db
+          .select()
+          .from(users)
+          .where(and(eq(users.id, decoded.id || decoded.userId), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (user.length && user[0].isVerified) {
+          // Set user in request if JWT is valid and user is verified
+          req.user = {
+            id: user[0].id,
+            userId: user[0].id.toString(),
+            fullName: user[0].fullName,
+            email: user[0].email,
+            role: user[0].role || 'CONSUMER',
+            isVerified: user[0].isVerified || false,
+            profilePicture: user[0].profilePicture || undefined
+          };
+        }
+      } catch (error: any) {
+        // Ignore errors for optional auth, user will just not be authenticated
+        console.log('JWT verification failed in optionalAuth:', error.message);
+      }
+    }
+    // If no token is provided or verification fails, req.user remains undefined
+    next();
+  } catch (error) {
+    console.error('Optional auth middleware error:', error);
+    // Continue to next middleware even if there's an error, as auth is optional
+    next();
+  }
+};
+
 
 // Admin authorization middleware
 export const requireAdmin = async (req: Request, res: Response, next: NextFunction) => {

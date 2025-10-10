@@ -1,4 +1,3 @@
-
 import express from 'express';
 import crypto from 'crypto';
 import { db } from '../db/config';
@@ -6,6 +5,7 @@ import { users, auditLogs, trustedDevices } from '../db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken'; // Import jwt for session token generation
 
 const router = express.Router();
 
@@ -248,13 +248,24 @@ router.post('/verify', requireAuth, async (req, res) => {
       userAgent: req.get('User-Agent')
     });
 
+    // Generate a short-lived JWT for the specific action if needed
+    let sessionToken = null;
+    if (validatedData.action && validatedData.action !== 'UNLOCK_DEVICE') {
+      sessionToken = jwt.sign(
+        { id: userId, action: validatedData.action, deviceId: validatedData.deviceId },
+        process.env.JWT_SECRET!,
+        { expiresIn: '5m' } // Short-lived token for specific actions
+      );
+    }
+
     res.json({
       success: true,
       message: 'Biometric verification successful',
       data: {
         verified: true,
         action: validatedData.action || 'UNLOCK_DEVICE',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        sessionToken: sessionToken // Include session token if generated
       }
     });
   } catch (error) {
@@ -295,6 +306,10 @@ router.delete('/remove', requireAuth, async (req, res) => {
         updatedAt: new Date()
       })
       .where(eq(users.id, userId));
+
+    // Optionally remove associated trusted devices if they are solely for biometrics
+    // await db.delete(trustedDevices).where(eq(trustedDevices.userId, userId));
+
 
     // Log audit trail
     await db.insert(auditLogs).values({
