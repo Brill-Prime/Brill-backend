@@ -45,8 +45,7 @@ export const users = pgTable("users", {
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),
   firebaseUidIdx: index("users_firebase_uid_idx").on(table.firebaseUid),
-  roleIdx: index("users_role_idx").on(table.role),
-  paystackRecipientCodeIdx: index("users_paystack_recipient_idx").on(table.paystackRecipientCode)
+  roleIdx: index("users_role_idx").on(table.role)
 }));
 
 // ---------------- Categories ----------------
