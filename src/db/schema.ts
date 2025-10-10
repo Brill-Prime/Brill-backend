@@ -171,9 +171,18 @@ export const driverProfiles = pgTable("driver_profiles", {
     id: serial("id").primaryKey(),
     userId: integer("user_id").references(() => users.id).notNull().unique(),
     vehicleDetails: jsonb("vehicle_details"),
+    vehicleType: text("vehicle_type"),
+    vehiclePlate: text("vehicle_plate"),
+    vehicleModel: text("vehicle_model"),
     drivingLicense: text("driving_license"),
     tier: driverTierEnum("tier").default('STANDARD'),
-    availability: boolean("availability").default(true)
+    availability: boolean("availability").default(true),
+    isAvailable: boolean("is_available").default(true),
+    isOnline: boolean("is_online").default(false),
+    verificationStatus: verificationStatusEnum("verification_status").default('PENDING'),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
 });
 
 // ---------------- Merchant Profiles ----------------
@@ -194,6 +203,334 @@ export const ratings = pgTable("ratings", {
     rating: integer("rating").notNull(),
     comment: text("comment"),
     createdAt: timestamp("created_at").defaultNow()
+});
+
+// ---------------- MFA Tokens ----------------
+export const mfaTokens = pgTable("mfa_tokens", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    token: text("token").notNull(),
+    method: text("method").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    isUsed: boolean("is_used").default(false),
+    usedAt: timestamp("used_at"),
+    createdAt: timestamp("created_at").defaultNow()
+}, (table) => ({
+    userIdIdx: index("mfa_tokens_user_id_idx").on(table.userId)
+}));
+
+// ---------------- Audit Logs ----------------
+export const auditLogs = pgTable("audit_logs", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id"),
+    details: jsonb("details").default('{}'),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").defaultNow()
+}, (table) => ({
+    userIdIdx: index("audit_logs_user_id_idx").on(table.userId),
+    entityTypeIdx: index("audit_logs_entity_type_idx").on(table.entityType),
+    createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt)
+}));
+
+// ---------------- Transactions ----------------
+export const transactions = pgTable("transactions", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    orderId: integer("order_id").references(() => orders.id),
+    recipientId: integer("recipient_id").references(() => users.id),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    netAmount: decimal("net_amount", { precision: 15, scale: 2 }),
+    currency: text("currency").default('NGN'),
+    type: transactionTypeEnum("type").notNull(),
+    status: paymentStatusEnum("status").default('PENDING'),
+    paymentMethod: text("payment_method"),
+    paymentGatewayRef: text("payment_gateway_ref"),
+    paystackTransactionId: text("paystack_transaction_id"),
+    transactionRef: text("transaction_ref").notNull().unique(),
+    description: text("description"),
+    metadata: jsonb("metadata").default('{}'),
+    initiatedAt: timestamp("initiated_at"),
+    completedAt: timestamp("completed_at"),
+    failedAt: timestamp("failed_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("transactions_user_id_idx").on(table.userId),
+    orderIdIdx: index("transactions_order_id_idx").on(table.orderId),
+    transactionRefIdx: index("transactions_ref_idx").on(table.transactionRef)
+}));
+
+// ---------------- Escrows ----------------
+export const escrows = pgTable("escrows", {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").references(() => orders.id).notNull(),
+    payerId: integer("payer_id").references(() => users.id).notNull(),
+    payeeId: integer("payee_id").references(() => users.id).notNull(),
+    amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+    status: escrowStatusEnum("status").default('HELD'),
+    paystackEscrowId: text("paystack_escrow_id"),
+    transactionRef: text("transaction_ref"),
+    releaseDate: timestamp("release_date"),
+    releasedAt: timestamp("released_at"),
+    disputeReason: text("dispute_reason"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    orderIdIdx: index("escrows_order_id_idx").on(table.orderId)
+}));
+
+// ---------------- Notifications ----------------
+export const notifications = pgTable("notifications", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    type: text("type").notNull(),
+    isRead: boolean("is_read").default(false),
+    metadata: jsonb("metadata").default('{}'),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("notifications_user_id_idx").on(table.userId)
+}));
+
+// ---------------- Order Items ----------------
+export const orderItems = pgTable("order_items", {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").references(() => orders.id).notNull(),
+    productId: integer("product_id").references(() => products.id),
+    quantity: integer("quantity").notNull(),
+    price: decimal("price", { precision: 15, scale: 2 }).notNull(),
+    subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    orderIdIdx: index("order_items_order_id_idx").on(table.orderId)
+}));
+
+// ---------------- Messages ----------------
+export const messages = pgTable("messages", {
+    id: serial("id").primaryKey(),
+    senderId: integer("sender_id").references(() => users.id).notNull(),
+    receiverId: integer("receiver_id").references(() => users.id).notNull(),
+    orderId: integer("order_id").references(() => orders.id),
+    message: text("message").notNull(),
+    isRead: boolean("is_read").default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    senderIdIdx: index("messages_sender_id_idx").on(table.senderId),
+    receiverIdIdx: index("messages_receiver_id_idx").on(table.receiverId)
+}));
+
+// ---------------- Toll Gates ----------------
+export const tollGates = pgTable("toll_gates", {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    location: text("location").notNull(),
+    latitude: decimal("latitude", { precision: 10, scale: 8 }),
+    longitude: decimal("longitude", { precision: 11, scale: 8 }),
+    fee: decimal("fee", { precision: 10, scale: 2 }).notNull(),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Support Tickets ----------------
+export const supportTickets = pgTable("support_tickets", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    orderId: integer("order_id").references(() => orders.id),
+    subject: text("subject").notNull(),
+    description: text("description").notNull(),
+    status: supportStatusEnum("status").default('OPEN'),
+    priority: text("priority").default('MEDIUM'),
+    category: text("category"),
+    assignedTo: integer("assigned_to").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("support_tickets_user_id_idx").on(table.userId)
+}));
+
+// ---------------- Verification Documents ----------------
+export const verificationDocuments = pgTable("verification_documents", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    documentType: text("document_type").notNull(),
+    documentNumber: text("document_number"),
+    documentUrl: text("document_url").notNull(),
+    status: verificationStatusEnum("status").default('PENDING'),
+    reviewedBy: integer("reviewed_by").references(() => users.id),
+    reviewNotes: text("review_notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("verification_documents_user_id_idx").on(table.userId)
+}));
+
+// ---------------- Content Reports ----------------
+export const contentReports = pgTable("content_reports", {
+    id: serial("id").primaryKey(),
+    reporterId: integer("reporter_id").references(() => users.id).notNull(),
+    reportedUserId: integer("reported_user_id").references(() => users.id),
+    reportedItemId: integer("reported_item_id"),
+    reportedItemType: text("reported_item_type"),
+    reason: text("reason").notNull(),
+    description: text("description"),
+    status: text("status").default('PENDING'),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Fraud Alerts ----------------
+export const fraudAlerts = pgTable("fraud_alerts", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    transactionId: integer("transaction_id").references(() => transactions.id),
+    alertType: text("alert_type").notNull(),
+    riskLevel: text("risk_level").notNull(),
+    description: text("description"),
+    status: text("status").default('ACTIVE'),
+    metadata: jsonb("metadata").default('{}'),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Security Logs ----------------
+export const securityLogs = pgTable("security_logs", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    action: text("action").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    success: boolean("success").default(true),
+    details: jsonb("details").default('{}'),
+    createdAt: timestamp("created_at").defaultNow()
+}, (table) => ({
+    userIdIdx: index("security_logs_user_id_idx").on(table.userId),
+    createdAtIdx: index("security_logs_created_at_idx").on(table.createdAt)
+}));
+
+// ---------------- Error Logs ----------------
+export const errorLogs = pgTable("error_logs", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    errorType: text("error_type").notNull(),
+    errorMessage: text("error_message").notNull(),
+    stackTrace: text("stack_trace"),
+    requestUrl: text("request_url"),
+    requestMethod: text("request_method"),
+    metadata: jsonb("metadata").default('{}'),
+    createdAt: timestamp("created_at").defaultNow()
+});
+
+// ---------------- Trusted Devices ----------------
+export const trustedDevices = pgTable("trusted_devices", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    deviceId: text("device_id").notNull(),
+    deviceName: text("device_name"),
+    deviceType: text("device_type"),
+    isActive: boolean("is_active").default(true),
+    lastUsed: timestamp("last_used").defaultNow(),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("trusted_devices_user_id_idx").on(table.userId)
+}));
+
+// ---------------- Suspicious Activities ----------------
+export const suspiciousActivities = pgTable("suspicious_activities", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id),
+    activityType: text("activity_type").notNull(),
+    description: text("description"),
+    riskScore: integer("risk_score"),
+    ipAddress: text("ip_address"),
+    metadata: jsonb("metadata").default('{}'),
+    createdAt: timestamp("created_at").defaultNow()
+});
+
+// ---------------- Identity Verifications ----------------
+export const identityVerifications = pgTable("identity_verifications", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    verificationType: text("verification_type").notNull(),
+    verificationData: jsonb("verification_data").default('{}'),
+    status: verificationStatusEnum("status").default('PENDING'),
+    verifiedAt: timestamp("verified_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Fuel Orders ----------------
+export const fuelOrders = pgTable("fuel_orders", {
+    id: serial("id").primaryKey(),
+    customerId: integer("customer_id").references(() => users.id).notNull(),
+    driverId: integer("driver_id").references(() => users.id),
+    fuelType: text("fuel_type").notNull(),
+    quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
+    totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+    deliveryAddress: text("delivery_address").notNull(),
+    status: orderStatusEnum("status").default('PENDING'),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Moderation Responses ----------------
+export const moderationResponses = pgTable("moderation_responses", {
+    id: serial("id").primaryKey(),
+    reportId: integer("report_id").references(() => contentReports.id).notNull(),
+    adminId: integer("admin_id"),
+    action: text("action").notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Delivery Feedback ----------------
+export const deliveryFeedback = pgTable("delivery_feedback", {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").references(() => orders.id).notNull(),
+    userId: integer("user_id").references(() => users.id).notNull(),
+    rating: integer("rating").notNull(),
+    comment: text("comment"),
+    feedbackType: text("feedback_type"),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+});
+
+// ---------------- Tracking ----------------
+export const tracking = pgTable("tracking", {
+    id: serial("id").primaryKey(),
+    orderId: integer("order_id").references(() => orders.id).notNull(),
+    driverId: integer("driver_id").references(() => users.id),
+    latitude: decimal("latitude", { precision: 10, scale: 8 }).notNull(),
+    longitude: decimal("longitude", { precision: 11, scale: 8 }).notNull(),
+    status: text("status"),
+    createdAt: timestamp("created_at").defaultNow()
+}, (table) => ({
+    orderIdIdx: index("tracking_order_id_idx").on(table.orderId)
+}));
+
+// ---------------- Admin Users ----------------
+export const adminUsers = pgTable("admin_users", {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").references(() => users.id).notNull().unique(),
+    permissions: jsonb("permissions").default('[]'),
+    isActive: boolean("is_active").default(true),
+    createdAt: timestamp("created_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
 });
 
 
