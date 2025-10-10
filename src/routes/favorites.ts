@@ -1,28 +1,34 @@
 
 import express from 'express';
 import { db } from '../db/config';
-import { eq, and, isNull } from 'drizzle-orm';
+import { users, products, merchants } from '../db/schema';
+import { eq, and, sql } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
 
 const router = express.Router();
 
-// Define favorites table schema inline for now
-// You'll need to add this to your schema.ts file
 const favoritesSchema = z.object({
-  itemId: z.string(),
-  itemType: z.enum(['merchant', 'commodity'])
+  itemId: z.number().int().positive(),
+  itemType: z.enum(['merchant', 'product'])
 });
 
-// GET /api/favorites - Get user favorites
+// GET /api/favorites - Get user favorites (using user metadata for now)
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
     
-    // This is a placeholder - you need to add favorites table to schema
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const favorites = (user?.metadata as any)?.favorites || [];
+    
     res.json({
       success: true,
-      data: []
+      data: favorites
     });
   } catch (error) {
     console.error('Get favorites error:', error);
@@ -33,7 +39,7 @@ router.get('/', requireAuth, async (req, res) => {
 // POST /api/favorites - Add to favorites
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
     const validation = favoritesSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -46,7 +52,26 @@ router.post('/', requireAuth, async (req, res) => {
 
     const { itemId, itemType } = validation.data;
 
-    // Add to favorites - you need to implement this with proper schema
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const favorites = (user?.metadata as any)?.favorites || [];
+    const newFavorite = { itemId, itemType, addedAt: new Date() };
+    
+    if (!favorites.some((f: any) => f.itemId === itemId && f.itemType === itemType)) {
+      favorites.push(newFavorite);
+      
+      await db
+        .update(users)
+        .set({ 
+          metadata: { ...user?.metadata, favorites }
+        })
+        .where(eq(users.id, userId));
+    }
+
     res.json({
       success: true,
       message: 'Added to favorites'
@@ -60,10 +85,25 @@ router.post('/', requireAuth, async (req, res) => {
 // DELETE /api/favorites/:itemId - Remove from favorites
 router.delete('/:itemId', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
-    const { itemId } = req.params;
+    const userId = req.user!.id;
+    const itemId = parseInt(req.params.itemId);
 
-    // Remove from favorites - you need to implement this with proper schema
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    let favorites = (user?.metadata as any)?.favorites || [];
+    favorites = favorites.filter((f: any) => f.itemId !== itemId);
+    
+    await db
+      .update(users)
+      .set({ 
+        metadata: { ...user?.metadata, favorites }
+      })
+      .where(eq(users.id, userId));
+
     res.json({
       success: true,
       message: 'Removed from favorites'

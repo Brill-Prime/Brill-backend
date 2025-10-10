@@ -1,21 +1,21 @@
 
 import express from 'express';
-import { db } from '../db/config';
 import { requireAuth } from '../utils/auth';
+import { realtimeDb } from '../services/realtime-database';
 import { z } from 'zod';
 
 const router = express.Router();
 
 const locationSchema = z.object({
-  latitude: z.number(),
-  longitude: z.number(),
-  timestamp: z.number()
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  timestamp: z.number().optional()
 });
 
 // PUT /api/location/live - Update live location
 router.put('/live', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
     const validation = locationSchema.safeParse(req.body);
 
     if (!validation.success) {
@@ -27,11 +27,19 @@ router.put('/live', requireAuth, async (req, res) => {
     }
 
     const { latitude, longitude, timestamp } = validation.data;
+    const locationData = {
+      latitude,
+      longitude,
+      timestamp: timestamp || Date.now(),
+      updatedAt: new Date().toISOString()
+    };
 
-    // Update live location - implement with Firebase Realtime DB or your schema
+    await realtimeDb.ref(`locations/users/${userId}`).set(locationData);
+
     res.json({
       success: true,
-      message: 'Location updated successfully'
+      message: 'Location updated successfully',
+      data: locationData
     });
   } catch (error) {
     console.error('Update location error:', error);
@@ -44,14 +52,19 @@ router.get('/live/:userId', requireAuth, async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Get live location - implement with Firebase Realtime DB or your schema
+    const snapshot = await realtimeDb.ref(`locations/users/${userId}`).once('value');
+    const locationData = snapshot.val();
+
+    if (!locationData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Location not found'
+      });
+    }
+
     res.json({
       success: true,
-      data: {
-        latitude: 0,
-        longitude: 0,
-        timestamp: Date.now()
-      }
+      data: locationData
     });
   } catch (error) {
     console.error('Get location error:', error);

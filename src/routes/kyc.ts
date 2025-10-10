@@ -1,22 +1,45 @@
 
 import express from 'express';
 import { db } from '../db/config';
+import { identityVerifications, verificationDocuments, users } from '../db/schema';
+import { eq, and, desc, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
 
 const router = express.Router();
 
-// GET /api/kyc/profile
+// GET /api/kyc/profile - Get user's KYC profile
 router.get('/profile', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
+
+    const verifications = await db
+      .select()
+      .from(identityVerifications)
+      .where(eq(identityVerifications.userId, userId))
+      .orderBy(desc(identityVerifications.submittedAt))
+      .limit(1);
+
+    const documents = await db
+      .select()
+      .from(verificationDocuments)
+      .where(and(
+        eq(verificationDocuments.userId, userId),
+        isNull(verificationDocuments.deletedAt)
+      ))
+      .orderBy(desc(verificationDocuments.uploadedAt));
 
     res.json({
       success: true,
       data: {
         userId,
-        verificationStatus: 'pending',
-        documents: []
+        verificationStatus: verifications[0]?.verificationStatus || 'PENDING',
+        documents: documents.map(doc => ({
+          id: doc.id,
+          documentType: doc.documentType,
+          status: doc.status,
+          uploadedAt: doc.uploadedAt
+        }))
       }
     });
   } catch (error) {
@@ -25,63 +48,29 @@ router.get('/profile', requireAuth, async (req, res) => {
   }
 });
 
-// PUT /api/kyc/personal-info
-router.put('/personal-info', requireAuth, async (req, res) => {
-  try {
-    const userId = (req as any).user.id;
-    const { firstName, lastName, dateOfBirth, nationality, address } = req.body;
-
-    res.json({
-      success: true,
-      message: 'Personal information updated successfully'
-    });
-  } catch (error) {
-    console.error('Update personal info error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update personal information' });
-  }
-});
-
-// PUT /api/kyc/business-info
-router.put('/business-info', requireAuth, async (req, res) => {
-  try {
-    const userId = (req as any).user.id;
-    const { businessName, businessType, registrationNumber, taxId } = req.body;
-
-    res.json({
-      success: true,
-      message: 'Business information updated successfully'
-    });
-  } catch (error) {
-    console.error('Update business info error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update business information' });
-  }
-});
-
-// PUT /api/kyc/driver-info
-router.put('/driver-info', requireAuth, async (req, res) => {
-  try {
-    const userId = (req as any).user.id;
-    const { licenseNumber, licenseExpiry, vehicleInfo } = req.body;
-
-    res.json({
-      success: true,
-      message: 'Driver information updated successfully'
-    });
-  } catch (error) {
-    console.error('Update driver info error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update driver information' });
-  }
-});
-
-// POST /api/kyc/documents
+// POST /api/kyc/documents - Upload verification document
 router.post('/documents', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
-    const { type, documentNumber, frontImage, backImage } = req.body;
+    const userId = req.user!.id;
+    const { documentType, documentNumber, fileName, fileSize, mimeType } = req.body;
+
+    const [newDocument] = await db
+      .insert(verificationDocuments)
+      .values({
+        userId,
+        documentType,
+        documentNumber,
+        fileName,
+        fileSize,
+        mimeType,
+        status: 'PENDING'
+      })
+      .returning();
 
     res.json({
       success: true,
-      message: 'Document uploaded successfully'
+      message: 'Document uploaded successfully',
+      data: newDocument
     });
   } catch (error) {
     console.error('Upload document error:', error);
@@ -89,14 +78,27 @@ router.post('/documents', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/kyc/submit
+// POST /api/kyc/submit - Submit KYC for verification
 router.post('/submit', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
+    const { documentType, documentNumber } = req.body;
+
+    const [verification] = await db
+      .insert(identityVerifications)
+      .values({
+        userId,
+        documentType,
+        documentNumber,
+        verificationStatus: 'PENDING',
+        submittedAt: new Date()
+      })
+      .returning();
 
     res.json({
       success: true,
-      message: 'KYC submitted for verification'
+      message: 'KYC submitted for verification',
+      data: verification
     });
   } catch (error) {
     console.error('Submit KYC error:', error);
@@ -104,16 +106,24 @@ router.post('/submit', requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/kyc/status
+// GET /api/kyc/status - Get KYC verification status
 router.get('/status', requireAuth, async (req, res) => {
   try {
-    const userId = (req as any).user.id;
+    const userId = req.user!.id;
+
+    const [verification] = await db
+      .select()
+      .from(identityVerifications)
+      .where(eq(identityVerifications.userId, userId))
+      .orderBy(desc(identityVerifications.submittedAt))
+      .limit(1);
 
     res.json({
       success: true,
       data: {
-        status: 'pending',
-        submittedAt: new Date()
+        status: verification?.verificationStatus || 'PENDING',
+        submittedAt: verification?.submittedAt || null,
+        reviewedAt: verification?.reviewedAt || null
       }
     });
   } catch (error) {
