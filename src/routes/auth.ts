@@ -1,45 +1,56 @@
 
 import express from 'express';
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/config';
 import { users } from '../db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
-import EmailService from '../services/email';
-import { generateVerificationCode } from '../utils/helpers';
 import admin from 'firebase-admin';
 
 const router = express.Router();
 
-// User Registration
+// User Registration via Firebase
 router.post('/register', async (req, res) => {
-  const { email, password, firstName, lastName, phone, role, firebaseUid } = req.body;
+  const { idToken, firstName, lastName, phone, role } = req.body;
 
-  if (!email || !password || !firstName || !lastName || !role) {
-    return res.status(400).json({ success: false, message: 'Email, password, firstName, lastName, and role are required' });
+  if (!idToken || !firstName || !lastName || !role) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Firebase ID token, firstName, lastName, and role are required' 
+    });
   }
 
   try {
+    // Verify Firebase token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { email, uid: firebaseUid, email_verified } = decodedToken;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email not found in Firebase token' });
+    }
+
+    // Check if user already exists
     const [existingUser] = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
     if (existingUser) {
       return res.status(409).json({ success: false, message: 'User already exists' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
     const fullName = `${firstName} ${lastName}`;
 
+    // Create user in local database
     const [newUser] = await db.insert(users).values({
       email,
-      password: hashedPassword,
       fullName,
       phone: phone || null,
       role: role.toUpperCase(),
+      isVerified: email_verified || false,
       createdAt: new Date()
     }).returning();
 
+    // Generate JWT for API access
     const token = jwt.sign({ id: newUser.id, role: newUser.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
+    const refreshToken = jwt.sign({ id: newUser.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
 
     const { password: _, ...userProfile } = newUser;
 
@@ -48,59 +59,80 @@ router.post('/register', async (req, res) => {
       message: 'User registered successfully', 
       data: { 
         userId: newUser.id,
+        firebaseUid,
         token,
+        refreshToken,
         user: userProfile
       } 
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Registration error:', error);
+    if (error.code === 'auth/id-token-expired') {
+      return res.status(401).json({ success: false, message: 'Firebase token expired' });
+    }
     res.status(500).json({ success: false, message: 'Registration failed' });
   }
 });
 
-// User Login
+// User Login via Firebase
 router.post('/login', async (req, res) => {
-  const { email, password, firebaseUid } = req.body;
+  const { idToken } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ success: false, message: 'Email is required' });
+  if (!idToken) {
+    return res.status(400).json({ success: false, message: 'Firebase ID token is required' });
   }
 
   try {
-    const [user] = await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))).limit(1);
+    // Verify Firebase token
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const { email, uid: firebaseUid, email_verified } = decodedToken;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email not found in Firebase token' });
+    }
+
+    // Find user in local database
+    let [user] = await db.select().from(users).where(and(eq(users.email, email), isNull(users.deletedAt))).limit(1);
 
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found. Please register first.' 
+      });
     }
 
-    // Support both password and firebaseUid login
-    if (password) {
-      if (!user.password) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
-      }
+    // Update last login and verification status
+    await db.update(users).set({ 
+      lastLoginAt: new Date(),
+      isVerified: email_verified || user.isVerified
+    }).where(eq(users.id, user.id));
 
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-
-      if (!isPasswordValid) {
-        return res.status(401).json({ success: false, message: 'Invalid credentials' });
-      }
-    } else if (firebaseUid) {
-      // Firebase authentication - trust the firebaseUid for now
-      // In production, verify this with Firebase Admin SDK
-    } else {
-      return res.status(400).json({ success: false, message: 'Password or firebaseUid is required' });
-    }
-
+    // Generate JWT for API access
     const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
-
-    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+    const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
 
     const { password: _, ...userProfile } = user;
-    res.json({ success: true, message: 'Login successful', data: { token, user: userProfile } });
+    
+    res.json({ 
+      success: true, 
+      message: 'Login successful', 
+      data: { 
+        token,
+        refreshToken,
+        firebaseUid,
+        user: { ...userProfile, isVerified: email_verified || user.isVerified }
+      } 
+    });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Login error:', error);
+    if (error.code === 'auth/id-token-expired') {
+      return res.status(401).json({ success: false, message: 'Firebase token expired' });
+    }
+    if (error.code === 'auth/argument-error') {
+      return res.status(400).json({ success: false, message: 'Invalid Firebase token' });
+    }
     res.status(500).json({ success: false, message: 'Login failed' });
   }
 });

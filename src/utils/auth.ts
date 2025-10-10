@@ -67,111 +67,97 @@ export const comparePassword = async (password: string, hashedPassword: string):
   return await bcrypt.compare(password, hashedPassword);
 };
 
-// Authentication middleware with Firebase Admin support
+// Authentication middleware with Firebase-first approach
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check for session-based auth first
-    if (req.session?.userId) {
-      req.user = {
-        id: req.session.userId,
-        userId: req.session.userId.toString(),
-        fullName: req.session.user?.fullName || '',
-        email: req.session.user?.email || '',
-        role: req.session.user?.role || 'CONSUMER',
-        isVerified: req.session.user?.isVerified || false,
-        profilePicture: req.session.user?.profilePicture
-      };
-      return next();
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required. Please provide a valid token.",
+        code: "AUTH_REQUIRED"
+      });
     }
 
-    // Check for JWT token in headers
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
+    const token = authHeader.substring(7);
 
-      // Try Firebase Admin token verification first
-      try {
-        const decodedToken = await admin.auth().verifyIdToken(token);
+    // Primary: Try Firebase token verification
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(token);
 
-        // Find or create user in local database
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(and(eq(users.email, decodedToken.email || ''), isNull(users.deletedAt)))
-          .limit(1);
+      // Find user in local database
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.email, decodedToken.email || ''), isNull(users.deletedAt)))
+        .limit(1);
 
-        if (user) {
-          req.user = {
-            id: user.id,
-            userId: user.id.toString(),
-            fullName: user.fullName,
-            email: user.email,
-            role: user.role || 'CONSUMER',
-            isVerified: user.isVerified || decodedToken.email_verified || false,
-            profilePicture: user.profilePicture || undefined
-          };
-          return next();
-        } else {
-          // If user not found in DB, return unauthorized
-          return res.status(401).json({
-            success: false,
-            message: "User not found in our system.",
-            code: "USER_NOT_FOUND"
-          });
-        }
-      } catch (firebaseError: any) {
-        // If Firebase verification fails, try JWT verification
-        if (firebaseError.code === 'auth/id-token-expired' || firebaseError.code === 'auth/id-token-invalid') {
-          console.log('Firebase token verification failed or expired, trying JWT');
-        } else {
-          console.error('Firebase auth error:', firebaseError);
-        }
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: "User not found. Please register first.",
+          code: "USER_NOT_FOUND"
+        });
       }
 
-      // Fallback to JWT token verification
+      req.user = {
+        id: user.id,
+        userId: user.id.toString(),
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role || 'CONSUMER',
+        isVerified: user.isVerified || decodedToken.email_verified || false,
+        profilePicture: user.profilePicture || undefined
+      };
+      
+      return next();
+    } catch (firebaseError: any) {
+      // Firebase token verification failed, try JWT as fallback
+      if (firebaseError.code === 'auth/id-token-expired') {
+        console.log('Firebase token expired, trying JWT fallback');
+      } else if (firebaseError.code === 'auth/argument-error') {
+        console.log('Invalid Firebase token format, trying JWT fallback');
+      } else {
+        console.error('Firebase auth error:', firebaseError);
+      }
+
+      // Fallback: JWT token verification (for internal API tokens)
       try {
         const decoded: any = await verifyToken(token);
 
-        // Verify user still exists and is active
-        const user = await db
+        const [user] = await db
           .select()
           .from(users)
           .where(and(eq(users.id, decoded.id || decoded.userId), isNull(users.deletedAt)))
           .limit(1);
 
-        if (!user.length || !user[0].isVerified) {
+        if (!user) {
           return res.status(401).json({
             success: false,
-            message: "User not found or not verified",
+            message: "User not found or account deactivated",
             code: "USER_INVALID"
           });
         }
 
-        // Set user in request
         req.user = {
-          id: user[0].id,
-          userId: user[0].id.toString(),
-          fullName: user[0].fullName,
-          email: user[0].email,
-          role: user[0].role || 'CONSUMER',
-          isVerified: user[0].isVerified || false,
-          profilePicture: user[0].profilePicture || undefined
+          id: user.id,
+          userId: user.id.toString(),
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role || 'CONSUMER',
+          isVerified: user.isVerified || false,
+          profilePicture: user.profilePicture || undefined
         };
 
-        next();
-      } catch (error: any) {
+        return next();
+      } catch (jwtError: any) {
         return res.status(401).json({
           success: false,
           message: "Invalid or expired token",
-          code: error.message
+          code: jwtError.message || 'TOKEN_INVALID'
         });
       }
-    } else {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required",
-        code: "AUTH_REQUIRED"
-      });
     }
   } catch (error) {
     console.error('Auth middleware error:', error);
@@ -185,30 +171,15 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 // Optional authentication middleware (for routes that don't strictly require login)
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check for session-based auth first
-    if (req.session?.userId) {
-      req.user = {
-        id: req.session.userId,
-        userId: req.session.userId.toString(),
-        fullName: req.session.user?.fullName || '',
-        email: req.session.user?.email || '',
-        role: req.session.user?.role || 'CONSUMER',
-        isVerified: req.session.user?.isVerified || false,
-        profilePicture: req.session.user?.profilePicture
-      };
-      return next();
-    }
-
-    // Check for JWT token in headers
     const authHeader = req.headers.authorization;
+    
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
 
-      // Try Firebase Admin token verification first
+      // Try Firebase token verification first
       try {
         const decodedToken = await admin.auth().verifyIdToken(token);
 
-        // Find user in local database
         const [user] = await db
           .select()
           .from(users)
@@ -225,50 +196,39 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
             isVerified: user.isVerified || decodedToken.email_verified || false,
             profilePicture: user.profilePicture || undefined
           };
-          // Do not return here, allow JWT to be checked as well if Firebase fails
         }
       } catch (firebaseError: any) {
-        // If Firebase verification fails, log it and continue to JWT verification
-        if (firebaseError.code === 'auth/id-token-expired' || firebaseError.code === 'auth/id-token-invalid') {
-          console.log('Firebase token verification failed or expired in optionalAuth, trying JWT');
-        } else {
-          console.error('Firebase auth error in optionalAuth:', firebaseError);
+        // Try JWT verification as fallback
+        try {
+          const decoded: any = await verifyToken(token);
+
+          const [user] = await db
+            .select()
+            .from(users)
+            .where(and(eq(users.id, decoded.id || decoded.userId), isNull(users.deletedAt)))
+            .limit(1);
+
+          if (user) {
+            req.user = {
+              id: user.id,
+              userId: user.id.toString(),
+              fullName: user.fullName,
+              email: user.email,
+              role: user.role || 'CONSUMER',
+              isVerified: user.isVerified || false,
+              profilePicture: user.profilePicture || undefined
+            };
+          }
+        } catch (jwtError) {
+          // Silently fail for optional auth
+          console.log('Token verification failed in optionalAuth');
         }
-      }
-
-      // Fallback to JWT token verification
-      try {
-        const decoded: any = await verifyToken(token);
-
-        // Verify user still exists and is active
-        const user = await db
-          .select()
-          .from(users)
-          .where(and(eq(users.id, decoded.id || decoded.userId), isNull(users.deletedAt)))
-          .limit(1);
-
-        if (user.length && user[0].isVerified) {
-          // Set user in request if JWT is valid and user is verified
-          req.user = {
-            id: user[0].id,
-            userId: user[0].id.toString(),
-            fullName: user[0].fullName,
-            email: user[0].email,
-            role: user[0].role || 'CONSUMER',
-            isVerified: user[0].isVerified || false,
-            profilePicture: user[0].profilePicture || undefined
-          };
-        }
-      } catch (error: any) {
-        // Ignore errors for optional auth, user will just not be authenticated
-        console.log('JWT verification failed in optionalAuth:', error.message);
       }
     }
-    // If no token is provided or verification fails, req.user remains undefined
+    
     next();
   } catch (error) {
     console.error('Optional auth middleware error:', error);
-    // Continue to next middleware even if there's an error, as auth is optional
     next();
   }
 };
