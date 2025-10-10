@@ -1,8 +1,8 @@
 
 import express from 'express';
 import { db } from '../db/config';
-import { users, products, merchants } from '../db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { users, products, merchantProfiles } from '../db/schema';
+import { eq, and, sql, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
 
@@ -13,7 +13,7 @@ const favoritesSchema = z.object({
   itemType: z.enum(['merchant', 'product'])
 });
 
-// GET /api/favorites - Get user favorites (using user metadata for now)
+// GET /api/favorites - Get user favorites with full details
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
@@ -24,11 +24,54 @@ router.get('/', requireAuth, async (req, res) => {
       .where(eq(users.id, userId))
       .limit(1);
 
-    const favorites = (user?.metadata as any)?.favorites || [];
+    const favoritesData = (user?.metadata as any)?.favorites || [];
+    
+    // Enrich favorites with actual item data
+    const enrichedFavorites = await Promise.all(
+      favoritesData.map(async (fav: any) => {
+        if (fav.itemType === 'product') {
+          const [product] = await db
+            .select({
+              id: products.id,
+              name: products.name,
+              price: products.price,
+              imageUrl: products.imageUrl,
+              rating: products.rating,
+              isAvailable: products.isAvailable
+            })
+            .from(products)
+            .where(and(eq(products.id, fav.itemId), isNull(products.deletedAt)))
+            .limit(1);
+          
+          return { ...fav, details: product || null };
+        } else if (fav.itemType === 'merchant') {
+          const [merchant] = await db
+            .select({
+              id: merchantProfiles.id,
+              businessName: merchantProfiles.businessName,
+              businessAddress: merchantProfiles.businessAddress,
+              isOpen: merchantProfiles.isOpen,
+              user: {
+                id: users.id,
+                fullName: users.fullName,
+                profilePicture: users.profilePicture,
+                averageRating: users.averageRating
+              }
+            })
+            .from(merchantProfiles)
+            .leftJoin(users, eq(merchantProfiles.userId, users.id))
+            .where(and(eq(merchantProfiles.id, fav.itemId), isNull(merchantProfiles.deletedAt)))
+            .limit(1);
+          
+          return { ...fav, details: merchant || null };
+        }
+        return fav;
+      })
+    );
     
     res.json({
       success: true,
-      data: favorites
+      data: enrichedFavorites.filter(f => f.details !== null)
     });
   } catch (error) {
     console.error('Get favorites error:', error);
@@ -52,6 +95,29 @@ router.post('/', requireAuth, async (req, res) => {
 
     const { itemId, itemType } = validation.data;
 
+    // Verify item exists
+    if (itemType === 'product') {
+      const [product] = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.id, itemId), isNull(products.deletedAt)))
+        .limit(1);
+      
+      if (!product) {
+        return res.status(404).json({ success: false, message: 'Product not found' });
+      }
+    } else if (itemType === 'merchant') {
+      const [merchant] = await db
+        .select()
+        .from(merchantProfiles)
+        .where(and(eq(merchantProfiles.id, itemId), isNull(merchantProfiles.deletedAt)))
+        .limit(1);
+      
+      if (!merchant) {
+        return res.status(404).json({ success: false, message: 'Merchant not found' });
+      }
+    }
+
     const [user] = await db
       .select()
       .from(users)
@@ -59,7 +125,7 @@ router.post('/', requireAuth, async (req, res) => {
       .limit(1);
 
     const favorites = (user?.metadata as any)?.favorites || [];
-    const newFavorite = { itemId, itemType, addedAt: new Date() };
+    const newFavorite = { itemId, itemType, addedAt: new Date().toISOString() };
     
     if (!favorites.some((f: any) => f.itemId === itemId && f.itemType === itemType)) {
       favorites.push(newFavorite);
@@ -67,14 +133,16 @@ router.post('/', requireAuth, async (req, res) => {
       await db
         .update(users)
         .set({ 
-          metadata: { ...user?.metadata, favorites }
+          metadata: { ...(user?.metadata || {}), favorites },
+          updatedAt: new Date()
         })
         .where(eq(users.id, userId));
     }
 
     res.json({
       success: true,
-      message: 'Added to favorites'
+      message: 'Added to favorites',
+      data: newFavorite
     });
   } catch (error) {
     console.error('Add favorite error:', error);
@@ -87,6 +155,11 @@ router.delete('/:itemId', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
     const itemId = parseInt(req.params.itemId);
+    const itemType = req.query.type as string;
+
+    if (isNaN(itemId)) {
+      return res.status(400).json({ success: false, message: 'Invalid item ID' });
+    }
 
     const [user] = await db
       .select()
@@ -95,12 +168,18 @@ router.delete('/:itemId', requireAuth, async (req, res) => {
       .limit(1);
 
     let favorites = (user?.metadata as any)?.favorites || [];
-    favorites = favorites.filter((f: any) => f.itemId !== itemId);
+    
+    if (itemType) {
+      favorites = favorites.filter((f: any) => !(f.itemId === itemId && f.itemType === itemType));
+    } else {
+      favorites = favorites.filter((f: any) => f.itemId !== itemId);
+    }
     
     await db
       .update(users)
       .set({ 
-        metadata: { ...user?.metadata, favorites }
+        metadata: { ...(user?.metadata || {}), favorites },
+        updatedAt: new Date()
       })
       .where(eq(users.id, userId));
 

@@ -1,18 +1,20 @@
-
 import express from 'express';
 import { db } from '../db/config';
+import { messages, users } from '../db/schema';
+import { eq, or, and, desc, sql } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
 
 const router = express.Router();
 
-const createConversationSchema = z.object({
-  orderId: z.string()
+const messageSchema = z.object({
+  receiverId: z.number().int().positive(),
+  message: z.string().min(1).max(5000),
+  orderId: z.number().int().positive().optional()
 });
 
-const sendMessageSchema = z.object({
-  message: z.string(),
-  messageType: z.enum(['text', 'image', 'location'])
+const createConversationSchema = z.object({
+  orderId: z.string()
 });
 
 // GET /api/conversations - Get user conversations
@@ -20,9 +22,44 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user.id;
 
+    // Get unique conversation partners with last message
+    const conversations = await db
+      .select({
+        partnerId: sql<number>`CASE WHEN ${messages.senderId} = ${userId} THEN ${messages.receiverId} ELSE ${messages.senderId} END`,
+        partnerName: users.fullName,
+        partnerEmail: users.email,
+        partnerProfilePicture: users.profilePicture,
+        lastMessage: messages.message,
+        lastMessageTime: messages.createdAt,
+        isRead: messages.isRead,
+        senderId: messages.senderId
+      })
+      .from(messages)
+      .leftJoin(
+        users,
+        sql`${users.id} = CASE WHEN ${messages.senderId} = ${userId} THEN ${messages.receiverId} ELSE ${messages.senderId} END`
+      )
+      .where(
+        or(
+          eq(messages.senderId, userId),
+          eq(messages.receiverId, userId)
+        )
+      )
+      .orderBy(desc(messages.createdAt))
+      .groupBy(
+        sql`CASE WHEN ${messages.senderId} = ${userId} THEN ${messages.receiverId} ELSE ${messages.senderId} END`,
+        users.fullName,
+        users.email,
+        users.profilePicture,
+        messages.message,
+        messages.createdAt,
+        messages.isRead,
+        messages.senderId
+      );
+
     res.json({
       success: true,
-      data: []
+      data: conversations
     });
   } catch (error) {
     console.error('Get conversations error:', error);
@@ -44,11 +81,41 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
+    const { orderId } = validation.data;
+
+    // Find existing conversation or create new one
+    let conversation = await db.query.conversations.findFirst({
+      where: (conversations, { eq, and }) =>
+        and(
+          eq(conversations.orderId, orderId),
+          or(
+            eq(conversations.userId1, userId),
+            eq(conversations.userId2, userId)
+          )
+        ),
+    });
+
+    if (!conversation) {
+      // Determine the other user in the conversation (assuming orderId implies a known counterparty)
+      // This is a placeholder; you'll need logic to determine the other user based on orderId
+      const counterPartyId = 1; // Replace with actual logic
+
+      const [newConversation] = await db
+        .insert(db.conversations) // Assuming you have a 'conversations' table in your schema
+        .values({
+          userId1: userId,
+          userId2: counterPartyId,
+          orderId: orderId
+        })
+        .returning();
+      conversation = newConversation;
+    }
+
     res.json({
       success: true,
       data: {
-        conversationId: 'generated-id',
-        orderId: validation.data.orderId
+        conversationId: conversation.id,
+        orderId: conversation.orderId
       }
     });
   } catch (error) {
@@ -60,12 +127,35 @@ router.post('/', requireAuth, async (req, res) => {
 // GET /api/conversations/:conversationId/messages
 router.get('/:conversationId/messages', requireAuth, async (req, res) => {
   try {
+    const userId = (req as any).user.id;
     const { conversationId } = req.params;
     const { limit = '50', offset = '0' } = req.query;
 
+    const messages = await db.query.messages.findMany({
+      where: (messages, { eq, and, or }) =>
+        or(
+          and(eq(messages.conversationId, conversationId), eq(messages.senderId, userId)),
+          and(eq(messages.conversationId, conversationId), eq(messages.receiverId, userId))
+        ),
+      limit: parseInt(offset as string),
+      offset: parseInt(limit as string),
+      orderBy: desc(messages.createdAt)
+    });
+
+    // Mark messages as read if the current user is the receiver
+    await db.update(db.messages)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.receiverId, userId),
+          eq(messages.isRead, false)
+        )
+      );
+
     res.json({
       success: true,
-      data: []
+      data: messages
     });
   } catch (error) {
     console.error('Get messages error:', error);
@@ -88,8 +178,41 @@ router.post('/:conversationId/messages', requireAuth, async (req, res) => {
       });
     }
 
+    const { message, messageType } = validation.data;
+
+    // Verify that the user is part of the conversation
+    const conversation = await db.query.conversations.findFirst({
+      where: (conversations, { eq, or }) =>
+        or(
+          and(eq(conversations.id, conversationId), eq(conversations.userId1, userId)),
+          and(eq(conversations.id, conversationId), eq(conversations.userId2, userId))
+        ),
+    });
+
+    if (!conversation) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not authorized to send messages in this conversation'
+      });
+    }
+
+    const receiverId = conversation.userId1 === userId ? conversation.userId2 : conversation.userId1;
+
+    const [newMessage] = await db
+      .insert(db.messages)
+      .values({
+        conversationId: conversationId,
+        senderId: userId,
+        receiverId: receiverId,
+        message,
+        messageType,
+        isRead: false
+      })
+      .returning();
+
     res.json({
       success: true,
+      data: newMessage,
       message: 'Message sent successfully'
     });
   } catch (error) {
@@ -101,7 +224,19 @@ router.post('/:conversationId/messages', requireAuth, async (req, res) => {
 // PUT /api/conversations/:conversationId/read
 router.put('/:conversationId/read', requireAuth, async (req, res) => {
   try {
+    const userId = (req as any).user.id;
     const { conversationId } = req.params;
+
+    // Mark all messages in the conversation as read for the current user
+    await db.update(db.messages)
+      .set({ isRead: true })
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.receiverId, userId),
+          eq(messages.isRead, false)
+        )
+      );
 
     res.json({
       success: true,
