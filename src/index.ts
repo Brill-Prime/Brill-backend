@@ -86,6 +86,8 @@ import callsRouter from './routes/calls';
 import transactionsMerchantRouter from './routes/transactions-merchant';
 import transactionsCustomerRouter from './routes/transactions-customer';
 import biometricAuthRouter from './routes/biometric-auth';
+import callsRouter from './routes/calls';
+import mapTrackingRouter from './routes/map-tracking';
 
 const app = express();
 const server = createServer(app);
@@ -328,6 +330,8 @@ app.use('/api', callsRouter);
 app.use(transactionsMerchantRouter);
 app.use(transactionsCustomerRouter);
 app.use('/api/biometric', biometricAuthRouter);
+app.use('/api/calls', callsRouter);
+app.use('/api/map', mapTrackingRouter);
 
 // Basic route
 app.get('/', (req, res) => {

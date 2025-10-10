@@ -167,6 +167,15 @@ export class WebSocketService {
         case 'location_update':
           await this.handleLocationUpdate(ws, message.data);
           break;
+        case 'call_signal':
+          await this.handleCallSignal(ws, message.data);
+          break;
+        case 'join_call':
+          await this.handleJoinCall(ws, message.data);
+          break;
+        case 'leave_call':
+          await this.handleLeaveCall(ws, message.data);
+          break;
         default:
           ws.send(JSON.stringify({ type: 'error', data: { message: 'Unknown message type' } }));
       }
@@ -198,6 +207,76 @@ export class WebSocketService {
     } catch (error) {
       console.error('Location update error:', error);
       ws.send(JSON.stringify({ type: 'error', data: { message: 'Failed to update location' } }));
+    }
+  }
+
+  private async handleCallSignal(ws: AuthenticatedWebSocket, data: any) {
+    try {
+      const { peerId, signalType, signalData } = data;
+      
+      await this.sendNotificationToUser(peerId.toString(), {
+        type: 'call_signal',
+        signalType,
+        signalData,
+        from: ws.userId
+      });
+
+      ws.send(JSON.stringify({ 
+        type: 'signal_sent', 
+        data: { success: true, peerId } 
+      }));
+    } catch (error) {
+      console.error('Call signal error:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        data: { message: 'Failed to send call signal' } 
+      }));
+    }
+  }
+
+  private async handleJoinCall(ws: AuthenticatedWebSocket, data: any) {
+    try {
+      const { callId, peerId } = data;
+      
+      await this.sendNotificationToUser(peerId.toString(), {
+        type: 'peer_joined_call',
+        callId,
+        peerId: ws.userId
+      });
+
+      ws.send(JSON.stringify({ 
+        type: 'joined_call', 
+        data: { success: true, callId } 
+      }));
+    } catch (error) {
+      console.error('Join call error:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        data: { message: 'Failed to join call' } 
+      }));
+    }
+  }
+
+  private async handleLeaveCall(ws: AuthenticatedWebSocket, data: any) {
+    try {
+      const { callId, peerId } = data;
+      
+      await this.sendNotificationToUser(peerId.toString(), {
+        type: 'peer_left_call',
+        callId,
+        peerId: ws.userId
+      });
+
+      ws.send(JSON.stringify({ 
+        type: 'left_call', 
+        data: { success: true, callId } 
+      }));
+    } catch (error) {
+      console.error('Leave call error:', error);
+      ws.send(JSON.stringify({ 
+        type: 'error', 
+        data: { message: 'Failed to leave call' } 
+      }));
     }
   }
 
