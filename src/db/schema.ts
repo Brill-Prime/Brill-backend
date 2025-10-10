@@ -203,8 +203,30 @@ export const merchantProfiles = pgTable("merchant_profiles", {
     userId: integer("user_id").references(() => users.id).notNull().unique(),
     businessName: text("business_name").notNull(),
     businessAddress: text("business_address"),
-    kycStatus: kycStatusEnum("kyc_status").default('PENDING')
-});
+    businessType: text("business_type"),
+    businessPhone: text("business_phone"),
+    businessEmail: text("business_email"),
+    latitude: decimal("latitude", { precision: 10, scale: 8 }),
+    longitude: decimal("longitude", { precision: 11, scale: 8 }),
+    phone: text("phone"),
+    description: text("description"),
+    operatingHours: jsonb("operating_hours").default('{}'),
+    isOpen: boolean("is_open").default(true),
+    isVerified: boolean("is_verified").default(false),
+    isActive: boolean("is_active").default(true),
+    verificationLevel: text("verification_level").default('BASIC'),
+    backgroundCheckStatus: text("background_check_status").default('PENDING'),
+    verificationStatus: verificationStatusEnum("verification_status").default('PENDING'),
+    kycStatus: kycStatusEnum("kyc_status").default('PENDING'),
+    kycData: jsonb("kyc_data").default('{}'),
+    kycApprovedAt: timestamp("kyc_approved_at"),
+    kycApprovedBy: integer("kyc_approved_by").references(() => users.id),
+    createdAt: timestamp("created_at").defaultNow(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+    deletedAt: timestamp("deleted_at")
+}, (table) => ({
+    userIdIdx: index("merchant_profiles_user_id_idx").on(table.userId)
+}));
 
 // ---------------- Ratings ----------------
 export const ratings = pgTable("ratings", {

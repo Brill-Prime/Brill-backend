@@ -72,6 +72,7 @@ import driverOrdersRoutes from './routes/driver-orders';
 import merchantCommunicationRouter from './routes/merchant-communication';
 import merchantInventoryRouter from './routes/merchant-inventory';
 import commoditiesRouter from './routes/commodities';
+import merchantCustomersRouter from './routes/merchant-customers';
 import profileAddressesRouter from './routes/profile-addresses';
 import profilePaymentMethodsRouter from './routes/profile-payment-methods';
 import profileChangePasswordRouter from './routes/profile-change-password';
@@ -311,6 +312,7 @@ app.use('/api/driver', driverOrdersRoutes);
 app.use('/api', merchantCommunicationRouter);
 app.use('/api', merchantInventoryRouter);
 app.use('/api', commoditiesRouter);
+app.use('/api/merchants', merchantCustomersRouter);
 app.use('/api', profileAddressesRouter);
 app.use('/api', profilePaymentMethodsRouter);
 app.use('/api', profileChangePasswordRouter);
@@ -320,8 +322,8 @@ app.use('/api', adminEscrowManagementRouter);
 app.use('/api', adminModerationRouter);
 app.use('/api', adminControlCenterRouter);
 app.use('/api', callsRouter);
-app.use('/api', transactionsMerchantRouter);
-app.use('/api', transactionsCustomerRouter);
+app.use(transactionsMerchantRouter);
+app.use(transactionsCustomerRouter);
 
 // Basic route
 app.get('/', (req, res) => {

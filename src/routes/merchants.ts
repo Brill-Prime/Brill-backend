@@ -1,7 +1,7 @@
 
 import express from 'express';
 import { db } from '../db/config';
-import { merchantProfiles, users, auditLogs } from '../db/schema';
+import { merchantProfiles, users, auditLogs, orders } from '../db/schema';
 import { eq, isNull, desc, and, or, ilike, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
 import { requireAuth, requireRole, requireAdmin } from '../utils/auth';
