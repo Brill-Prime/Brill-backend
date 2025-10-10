@@ -1,3 +1,5 @@
+import 'express-session';
+
 declare module 'express-session' {
   interface SessionData {
     userId?: number;
@@ -21,7 +23,7 @@ declare module 'express-session' {
 declare global {
   namespace Express {
     interface Request {
-      isAuthenticated(): boolean;
+      isAuthenticated?(): boolean;
       user?: {
         id: number;
         userId: string;
@@ -34,3 +36,5 @@ declare global {
     }
   }
 }
+
+export {};
