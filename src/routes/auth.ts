@@ -6,6 +6,7 @@ import { users } from '../db/schema';
 import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import admin from 'firebase-admin';
+import EmailService from '../services/email';
 
 const router = express.Router();
 
@@ -298,6 +299,21 @@ router.put('/deactivate', requireAuth, async (req, res) => {
 
     const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 
+    // Send deactivation email if email service is configured
+    if (user && user.email) {
+      await EmailService.sendEmail(
+        user.email,
+        'Account Deactivated',
+        `<p>Hello ${user.fullName},</p><p>Your account has been successfully deactivated. If you wish to reactivate it, please contact support.</p>`
+      );
+    }
+
+    res.json({ success: true, message: 'User account deactivated successfully' });
+  } catch (error) {
+    console.error('Deactivation error:', error);
+    res.status(500).json({ success: false, message: 'Failed to deactivate user' });
+  }
+});
 
 // Request password reset via Firebase
 router.post('/request-password-reset', async (req, res) => {
@@ -375,22 +391,7 @@ router.post('/send-verification-email', requireAuth, async (req, res) => {
 });
 
 
-    if (user && user.email) {
-        await EmailService.sendEmail(
-            user.email,
-            'Account Deactivated',
-            `<p>Hello ${user.fullName},</p><p>Your account has been successfully deactivated. If you wish to reactivate it, please contact support.</p>`
-        );
-    }
-
-    res.json({ success: true, message: 'User account deactivated successfully' });
-  } catch (error) {
-    console.error('Deactivation error:', error);
-    res.status(500).json({ success: false, message: 'Failed to deactivate user' });
-  }
-});
-
-// Verify Firebase token and sync user
+    // Verify Firebase token and sync user
 router.post('/verify-firebase-token', async (req, res) => {
   try {
     const { idToken } = req.body;
