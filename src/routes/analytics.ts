@@ -72,8 +72,6 @@ router.get('/summary', requireAuth, requireRole(['MERCHANT', 'ADMIN']), async (r
   }
 });
 
-export default router;
-
 const analyticsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),

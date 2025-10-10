@@ -4,7 +4,7 @@ import { messages, users } from '../db/schema';
 import { eq, and, or, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { z } from 'zod';
-import { getIo } from '../services/websocket';
+import { getWebSocketService } from '../services/websocket';
 
 const router = express.Router();
 
@@ -40,9 +40,11 @@ router.post('/merchants/:id/communication', requireAuth, async (req, res) => {
         content: validatedData.content,
     }).returning();
 
-    //- Emit a real-time event to the recipient
-    const io = getIo();
-    io.to(`user_${validatedData.recipientId}`).emit('new_message', newMessage[0]);
+    // Emit a real-time event to the recipient using the WebSocketService
+    const wsService = getWebSocketService();
+    if (wsService) {
+      await wsService.broadcastToUser(validatedData.recipientId.toString(), { type: 'new_message', data: newMessage[0] });
+    }
 
     res.status(201).json({ 
         success: true, 

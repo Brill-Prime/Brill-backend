@@ -1,10 +1,20 @@
 
-import WebSocket from 'ws';
+// Load 'ws' dynamically at runtime to avoid ESM/CommonJS export mismatches when bundling
+let wsModule: any = null;
 import { Server } from 'http';
 import jwt from 'jsonwebtoken';
 import * as firebaseAdmin from '../config/firebase-admin';
 
-interface AuthenticatedWebSocket extends WebSocket {
+interface AuthenticatedWebSocket {
+  // Minimal subset of the ws WebSocket instance used in this service.
+  // We avoid importing the runtime 'ws' type here to keep the file bundler-friendly
+  // and to preserve the dynamic require usage already present in the file.
+  readyState?: number;
+  send?: (data: any) => void;
+  
+  close?: (code?: number, reason?: string) => void;
+  on?: (event: string, cb: (...args: any[]) => void) => void;
+  // Authentication metadata attached by this service
   userId?: string;
   userRole?: string;
   isAuthenticated?: boolean;
@@ -31,7 +41,7 @@ const getDb = () => {
 };
 
 export class WebSocketService {
-  private wss: WebSocket.Server;
+  private wss: any;
   private clients: Map<string, AuthenticatedWebSocket[]> = new Map();
 
   /**
@@ -62,7 +72,8 @@ export class WebSocketService {
     // For now, broadcast to all connected clients.
     for (const arr of this.clients.values()) {
       arr.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+        const OPEN = wsModule?.OPEN || wsModule?.default?.OPEN || 1;
+        if (client.readyState === OPEN) {
           client.send(JSON.stringify(payload));
         }
       });
@@ -76,7 +87,8 @@ export class WebSocketService {
     const arr = this.clients.get(userId);
     if (arr) {
       arr.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+        const OPEN = wsModule?.OPEN || wsModule?.default?.OPEN || 1;
+        if (client.readyState === OPEN) {
           client.send(JSON.stringify({ type: 'notification', data: payload }));
         }
       });
@@ -84,7 +96,18 @@ export class WebSocketService {
   }
 
   constructor(server: Server) {
-    this.wss = new WebSocket.Server({ 
+    if (!wsModule) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        wsModule = require('ws');
+      } catch (err) {
+        console.error('Failed to require ws module', err);
+        throw err;
+      }
+    }
+
+    const WebSocketServer = wsModule.Server || wsModule.default?.Server || wsModule;
+    this.wss = new WebSocketServer({
       server,
       path: '/ws'
     });
@@ -296,7 +319,8 @@ export class WebSocketService {
     const userClients = this.clients.get(userId);
     if (userClients) {
       userClients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+        const OPEN = wsModule?.OPEN || wsModule?.default?.OPEN || 1;
+        if (client.readyState === OPEN) {
           client.send(JSON.stringify(payload));
         }
       });

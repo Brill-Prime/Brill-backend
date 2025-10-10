@@ -4,7 +4,8 @@
   "description": "Brillprime backend",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build:esbuild",
+  "build:esbuild": "esbuild src/index.ts --bundle --platform=node --target=node18 --outfile=dist/index.js --external:bcrypt",
     "start": "node dist/index.js",
     "dev": "npx ts-node src/index.ts",
     "db:generate": "drizzle-kit generate",
@@ -58,6 +59,13 @@
     "@types/express": "^5.0.3",
     "@types/multer": "^1.4.13",
     "@types/node": "^24.7.0",
-    "@types/nodemailer": "^7.0.2"
+    "@types/nodemailer": "^7.0.2",
+    "esbuild": "^0.19.3"
   }
+
+  ,
+  "engines": {
+    "node": "18.x"
+  }
+
 }
