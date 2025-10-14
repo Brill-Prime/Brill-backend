@@ -13,8 +13,7 @@ const checkoutSchema = z.object({
   deliveryLatitude: z.string().optional(),
   deliveryLongitude: z.string().optional(),
   deliveryInstructions: z.string().optional(),
-  paymentMethod: z.enum(['CARD', 'CASH', 'WALLET', 'BANK_TRANSFER']),
-  useWalletBalance: z.boolean().default(false)
+  paymentMethod: z.enum(['CARD', 'CASH', 'BANK_TRANSFER']),
 });
 
 // Helper function to generate order number
