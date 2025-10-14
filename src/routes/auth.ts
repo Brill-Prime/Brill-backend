@@ -1,4 +1,3 @@
-
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/config';
@@ -7,11 +6,18 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import admin from 'firebase-admin';
 import EmailService from '../services/email';
+import { createRateLimiter } from '../services/rateLimiting';
 
 const router = express.Router();
 
+const authRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts
+  message: 'Too many authentication attempts, please try again later'
+});
+
 // User Registration via Firebase
-router.post('/register', async (req, res) => {
+router.post('/register', authRateLimiter, async (req, res) => {
   const { idToken, firstName, lastName, phone, role } = req.body;
 
   if (!idToken || !firstName || !lastName || !role) {
@@ -91,7 +97,7 @@ router.post('/register', async (req, res) => {
 });
 
 // User Login via Firebase
-router.post('/login', async (req, res) => {
+router.post('/login', authRateLimiter, async (req, res) => {
   const { idToken } = req.body;
 
   if (!idToken) {
@@ -128,7 +134,7 @@ router.post('/login', async (req, res) => {
     const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
 
     const { password: _, ...userProfile } = user;
-    
+
     res.json({ 
       success: true, 
       message: 'Login successful', 
@@ -153,7 +159,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Social Login/Registration
-router.post('/social-login', async (req, res) => {
+router.post('/social-login', authRateLimiter, async (req, res) => {
   try {
     const { provider, firebaseUid, email, fullName, photoUrl, role, idToken } = req.body;
 
@@ -178,7 +184,7 @@ router.post('/social-login', async (req, res) => {
       try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         verifiedFirebaseUid = decodedToken.uid;
-        
+
         // Ensure email matches
         if (decodedToken.email !== email) {
           return res.status(400).json({
@@ -316,7 +322,7 @@ router.put('/deactivate', requireAuth, async (req, res) => {
 });
 
 // Request password reset via Firebase
-router.post('/request-password-reset', async (req, res) => {
+router.post('/request-password-reset', authRateLimiter, async (req, res) => {
   try {
     const { email } = req.body;
 
@@ -348,7 +354,7 @@ router.post('/request-password-reset', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Password reset error:', error);
-    
+
     // Don't reveal if user exists
     res.json({
       success: true,
@@ -392,7 +398,7 @@ router.post('/send-verification-email', requireAuth, async (req, res) => {
 
 
     // Verify Firebase token and sync user
-router.post('/verify-firebase-token', async (req, res) => {
+router.post('/verify-firebase-token', authRateLimiter, async (req, res) => {
   try {
     const { idToken } = req.body;
 
