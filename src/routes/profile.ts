@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { users, auditLogs } from '../db/schema';
@@ -118,6 +117,7 @@ router.post('/photo', requireAuth, async (req, res) => {
       });
     }
 
+    // Update user profile picture
     const [updatedUser] = await db
       .update(users)
       .set({
@@ -127,27 +127,18 @@ router.post('/photo', requireAuth, async (req, res) => {
       .where(eq(users.id, userId))
       .returning();
 
-    // Log audit event
-    await db.insert(auditLogs).values({
-      userId,
-      action: 'PROFILE_PHOTO_UPDATED',
-      entityType: 'USER',
-      entityId: userId,
-      details: { photoUrl }
-    });
+    const { password, ...userProfile } = updatedUser;
 
     res.json({
       success: true,
       message: 'Profile photo updated successfully',
-      data: {
-        profilePicture: updatedUser.profilePicture
-      }
+      data: userProfile
     });
   } catch (error) {
-    console.error('Upload profile photo error:', error);
+    console.error('Upload photo error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update profile photo'
+      message: 'Failed to upload photo'
     });
   }
 });
