@@ -8,10 +8,11 @@ const router = express.Router();
 // Get real-time integration examples
 router.get('/', async (req, res) => {
   try {
+    const protocol = req.protocol === 'https' ? 'wss' : 'ws';
     const examples = {
       websocket: {
         description: 'WebSocket connection for real-time updates',
-        url: `ws://${req.get('host')}/ws`,
+        url: `${protocol}://${req.get('host')}/ws`,
         events: [
           { name: 'orderUpdate', description: 'Order status changes' },
           { name: 'driverLocation', description: 'Driver location updates' },
@@ -49,8 +50,8 @@ router.get('/integration', async (req, res) => {
       websocketEndpoint: '/ws',
       authentication: {
         method: 'JWT Token',
-        description: 'Include JWT token as query parameter: ws://domain/ws?token=YOUR_JWT_TOKEN',
-        example: 'ws://localhost:5000/ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+        description: 'Include JWT token as query parameter: wss://domain/ws?token=YOUR_JWT_TOKEN',
+        example: 'wss://yourdomain.replit.dev/ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
       },
       messageTypes: {
         client_to_server: [
@@ -135,7 +136,8 @@ router.get('/integration', async (req, res) => {
         javascript: {
           installation: 'Built-in WebSocket API',
           usage: `
-const ws = new WebSocket('ws://localhost:5000/ws?token=YOUR_JWT_TOKEN');
+const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+const ws = new WebSocket(\`\${protocol}://\${window.location.host}/ws?token=YOUR_JWT_TOKEN\`);
 
 ws.onopen = () => console.log('Connected');
 ws.onmessage = (event) => {
@@ -155,12 +157,14 @@ ws.send(JSON.stringify({
           usage: `
 import React, { useEffect, useState } from 'react';
 
-const useWebSocket = (token) => {
+const useWebSocket = (token, baseUrl) => {
   const [ws, setWs] = useState(null);
   const [messages, setMessages] = useState([]);
 
   useEffect(() => {
-    const websocket = new WebSocket(\`ws://localhost:5000/ws?token=\${token}\`);
+    const protocol = baseUrl.startsWith('https') ? 'wss' : 'ws';
+    const host = baseUrl.replace(/^https?:\\/\\//, '');
+    const websocket = new WebSocket(\`\${protocol}://\${host}/ws?token=\${token}\`);
     
     websocket.onmessage = (event) => {
       const message = JSON.parse(event.data);
@@ -169,7 +173,7 @@ const useWebSocket = (token) => {
 
     setWs(websocket);
     return () => websocket.close();
-  }, [token]);
+  }, [token, baseUrl]);
 
   const sendMessage = (message) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -222,6 +226,7 @@ router.get('/test-connection', requireAuth, async (req, res) => {
 
     const userId = req.user!.id;
     const connectionCount = wsService.getUserConnectionCount(String(userId));
+    const protocol = req.protocol === 'https' ? 'wss' : 'ws';
 
     res.json({
       success: true,
@@ -230,7 +235,7 @@ router.get('/test-connection', requireAuth, async (req, res) => {
         isConnected: connectionCount > 0,
         connectionCount,
         totalConnections: wsService.getConnectedClients(),
-        websocketUrl: `ws://${req.get('host')}/ws?token=YOUR_JWT_TOKEN`,
+        websocketUrl: `${protocol}://${req.get('host')}/ws?token=YOUR_JWT_TOKEN`,
         testMessage: {
           type: 'ping',
           data: {},
