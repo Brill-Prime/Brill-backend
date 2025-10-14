@@ -51,7 +51,7 @@ router.get('/integration', async (req, res) => {
       authentication: {
         method: 'JWT Token',
         description: 'Include JWT token as query parameter: wss://domain/ws?token=YOUR_JWT_TOKEN',
-        example: 'wss://yourdomain.replit.dev/ws?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+        example: 'wss://yourdomain.replit.dev/ws?token=<YOUR_ACTUAL_JWT_TOKEN>'
       },
       messageTypes: {
         client_to_server: [
