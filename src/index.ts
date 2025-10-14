@@ -57,6 +57,7 @@ import analyticsRouter from './routes/analytics';
 import adminDashboardRouter from './routes/admin-dashboard';
 import configRouter from './routes/config';
 import healthRouter from './routes/health';
+import healthCheckRouter from './routes/health-check';
 import driverVerificationRouter from './routes/driver-verification';
 import deliveryAssignmentsRoutes from './routes/delivery-assignments';
 import searchRouter from './routes/search';
@@ -276,6 +277,7 @@ app.use('/api/config', configRouter);
 
 // Health check routes
 app.use('/api/health', healthRouter);
+app.use('/api/health-check', healthCheckRouter);
 
 // Apply rate limiting to auth routes
 import RateLimitingService from './services/rateLimiting';
