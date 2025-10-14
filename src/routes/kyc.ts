@@ -52,7 +52,14 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.post('/documents', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { documentType, documentNumber, fileName, fileSize, mimeType } = req.body;
+    const { documentType, documentNumber, documentUrl, fileName, fileSize, mimeType } = req.body;
+
+    if (!documentType || !documentUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Document type and URL are required'
+      });
+    }
 
     const [newDocument] = await db
       .insert(verificationDocuments)
@@ -60,21 +67,67 @@ router.post('/documents', requireAuth, async (req, res) => {
         userId,
         documentType,
         documentNumber,
-        fileName,
-        fileSize,
-        mimeType,
-        status: 'PENDING'
+        documentUrl,
+        fileName: fileName || 'document',
+        fileSize: fileSize || 0,
+        mimeType: mimeType || 'application/octet-stream',
+        status: 'PENDING',
+        uploadedAt: new Date()
       })
       .returning();
 
     res.json({
       success: true,
       message: 'Document uploaded successfully',
-      data: newDocument
+      data: {
+        id: newDocument.id,
+        documentType: newDocument.documentType,
+        status: newDocument.status,
+        uploadedAt: newDocument.uploadedAt
+      }
     });
   } catch (error) {
     console.error('Upload document error:', error);
     res.status(500).json({ success: false, message: 'Failed to upload document' });
+  }
+});
+
+// DELETE /api/kyc/documents/:id - Delete verification document
+router.delete('/documents/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const documentId = parseInt(req.params.id);
+
+    if (isNaN(documentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid document ID' });
+    }
+
+    const [document] = await db
+      .select()
+      .from(verificationDocuments)
+      .where(eq(verificationDocuments.id, documentId))
+      .limit(1);
+
+    if (!document) {
+      return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    if (document.userId !== userId) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    await db
+      .update(verificationDocuments)
+      .set({ deletedAt: new Date() })
+      .where(eq(verificationDocuments.id, documentId));
+
+    res.json({
+      success: true,
+      message: 'Document deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete document error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete document' });
   }
 });
 

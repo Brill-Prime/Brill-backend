@@ -96,6 +96,7 @@ import profilePaymentMethodRoutes from './routes/profile-payment-methods';
 import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
 import profileRouter from './routes/profile';
 import walletRouter from './routes/wallet';
+import merchantAnalyticsRouter from './routes/merchant-analytics';
 
 const app = express();
 const server = createServer(app);
@@ -356,6 +357,9 @@ app.use('/api/profile', profileRouter);
 
 // Deprecated wallet routes (returns 410 Gone)
 app.use('/api/wallet', walletRouter);
+
+// Register merchant analytics route
+app.use('/api/merchants', merchantAnalyticsRouter);
 
 // Basic route
 app.get('/', (req, res) => {

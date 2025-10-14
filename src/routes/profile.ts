@@ -105,6 +105,88 @@ router.put('/', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/profile/photo - Upload profile photo
+router.post('/photo', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { photoUrl } = req.body;
+
+    if (!photoUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Photo URL is required'
+      });
+    }
+
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        profilePicture: photoUrl,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    // Log audit event
+    await db.insert(auditLogs).values({
+      userId,
+      action: 'PROFILE_PHOTO_UPDATED',
+      entityType: 'USER',
+      entityId: userId,
+      details: { photoUrl }
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile photo updated successfully',
+      data: {
+        profilePicture: updatedUser.profilePicture
+      }
+    });
+  } catch (error) {
+    console.error('Upload profile photo error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile photo'
+    });
+  }
+});
+
+// DELETE /api/profile/photo - Remove profile photo
+router.delete('/photo', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    await db
+      .update(users)
+      .set({
+        profilePicture: null,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Log audit event
+    await db.insert(auditLogs).values({
+      userId,
+      action: 'PROFILE_PHOTO_REMOVED',
+      entityType: 'USER',
+      entityId: userId,
+      details: {}
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile photo removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove profile photo error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove profile photo'
+    });
+  }
+});
+
 // DELETE /api/profile - Delete user account
 router.delete('/', requireAuth, async (req, res) => {
   try {
