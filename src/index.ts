@@ -102,6 +102,12 @@ const app = express();
 const server = createServer(app);
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
+// Validate critical environment variables
+const SESSION_SECRET = process.env.SESSION_SECRET || 'default-session-secret';
+if (process.env.NODE_ENV === 'production' && SESSION_SECRET === 'default-session-secret') {
+  console.error('⚠️ WARNING: SESSION_SECRET not set in production! Using default is insecure.');
+}
+
 // Trust proxy - required for Replit environment and rate limiting
 app.set('trust proxy', 1);
 
@@ -137,7 +143,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Session middleware (required for auth)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default-session-secret',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
