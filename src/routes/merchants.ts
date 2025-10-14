@@ -527,7 +527,10 @@ router.post('/:id/verify', requireAuth, requireAdmin, async (req, res) => {
 // GET /api/merchants/nearby - Get nearby merchants
 router.get('/nearby', async (req, res) => {
   try {
-    const { lat, lng, radius = '10', type } = req.query;
+    // Support both lat/lng and latitude/longitude parameter formats
+    const lat = (req.query.lat || req.query.latitude) as string;
+    const lng = (req.query.lng || req.query.longitude) as string;
+    const { radius = '10', type } = req.query;
 
     if (!lat || !lng) {
       return res.status(400).json({
@@ -536,8 +539,8 @@ router.get('/nearby', async (req, res) => {
       });
     }
 
-    const latitude = parseFloat(lat as string);
-    const longitude = parseFloat(lng as string);
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
     const radiusKm = parseFloat(radius as string);
 
     if (isNaN(latitude) || isNaN(longitude) || isNaN(radiusKm)) {
@@ -844,6 +847,256 @@ router.get('/:id/analytics', requireAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to retrieve merchant analytics'
+    });
+  }
+});
+
+// GET /api/merchants/:merchantId/commodities - Get merchant's commodities
+router.get('/:merchantId/commodities', async (req, res) => {
+  try {
+    const merchantId = parseInt(req.params.merchantId);
+
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Get products (commodities) for this merchant
+    const { products: productsTable, commodities: commoditiesTable } = await import('../db/schema');
+    
+    const merchantCommodities = await db
+      .select({
+        id: productsTable.id,
+        commodityId: productsTable.commodityId,
+        commodityName: commoditiesTable.name,
+        commodityDescription: commoditiesTable.description,
+        price: productsTable.price,
+        unit: productsTable.unit,
+        stockQuantity: productsTable.stockQuantity,
+        isAvailable: productsTable.isAvailable,
+        imageUrl: productsTable.imageUrl,
+        createdAt: productsTable.createdAt,
+        updatedAt: productsTable.updatedAt
+      })
+      .from(productsTable)
+      .leftJoin(commoditiesTable, eq(productsTable.commodityId, commoditiesTable.id))
+      .where(and(
+        eq(productsTable.merchantId, merchantId),
+        isNull(productsTable.deletedAt)
+      ));
+
+    res.json({
+      success: true,
+      data: merchantCommodities
+    });
+  } catch (error) {
+    console.error('Get merchant commodities error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve merchant commodities'
+    });
+  }
+});
+
+// POST /api/merchants/:merchantId/commodities - Add commodity to merchant
+router.post('/:merchantId/commodities', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.merchantId);
+    const { commodityId, price, unit, stockQuantity, imageUrl } = req.body;
+
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Check permissions
+    const merchantProfile = await db
+      .select()
+      .from(merchantProfiles)
+      .where(and(
+        eq(merchantProfiles.userId, currentUser.id),
+        isNull(merchantProfiles.deletedAt)
+      ))
+      .limit(1);
+
+    if (!merchantProfile.length || merchantProfile[0].id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Get commodity details
+    const { commodities: commoditiesTable, products: productsTable } = await import('../db/schema');
+    const [commodity] = await db
+      .select()
+      .from(commoditiesTable)
+      .where(eq(commoditiesTable.id, commodityId))
+      .limit(1);
+
+    if (!commodity) {
+      return res.status(404).json({
+        success: false,
+        message: 'Commodity not found'
+      });
+    }
+
+    // Create product linking commodity to merchant
+    const [newProduct] = await db
+      .insert(productsTable)
+      .values({
+        merchantId,
+        sellerId: currentUser.id,
+        commodityId,
+        name: commodity.name,
+        description: commodity.description,
+        price: price || commodity.price,
+        unit: unit || commodity.unit,
+        stockQuantity: stockQuantity || 0,
+        imageUrl,
+        isAvailable: true,
+        isActive: true
+      })
+      .returning();
+
+    res.status(201).json({
+      success: true,
+      message: 'Commodity added to merchant successfully',
+      data: newProduct
+    });
+  } catch (error) {
+    console.error('Add merchant commodity error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add commodity to merchant'
+    });
+  }
+});
+
+// PUT /api/merchants/:merchantId/commodities/:commodityId - Update merchant commodity
+router.put('/:merchantId/commodities/:commodityId', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.merchantId);
+    const commodityId = parseInt(req.params.commodityId);
+    const { price, unit, stockQuantity, isAvailable, imageUrl } = req.body;
+
+    // Check permissions
+    const merchantProfile = await db
+      .select()
+      .from(merchantProfiles)
+      .where(and(
+        eq(merchantProfiles.userId, currentUser.id),
+        isNull(merchantProfiles.deletedAt)
+      ))
+      .limit(1);
+
+    if (!merchantProfile.length || merchantProfile[0].id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Find and update the product
+    const { products: productsTable } = await import('../db/schema');
+    const [updatedProduct] = await db
+      .update(productsTable)
+      .set({
+        price,
+        unit,
+        stockQuantity,
+        isAvailable,
+        imageUrl,
+        updatedAt: new Date()
+      })
+      .where(and(
+        eq(productsTable.merchantId, merchantId),
+        eq(productsTable.commodityId, commodityId),
+        isNull(productsTable.deletedAt)
+      ))
+      .returning();
+
+    if (!updatedProduct) {
+      return res.status(404).json({
+        success: false,
+        message: 'Commodity not found for this merchant'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Commodity updated successfully',
+      data: updatedProduct
+    });
+  } catch (error) {
+    console.error('Update merchant commodity error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update commodity'
+    });
+  }
+});
+
+// DELETE /api/merchants/:merchantId/commodities/:commodityId - Remove commodity from merchant
+router.delete('/:merchantId/commodities/:commodityId', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const merchantId = parseInt(req.params.merchantId);
+    const commodityId = parseInt(req.params.commodityId);
+
+    // Check permissions
+    const merchantProfile = await db
+      .select()
+      .from(merchantProfiles)
+      .where(and(
+        eq(merchantProfiles.userId, currentUser.id),
+        isNull(merchantProfiles.deletedAt)
+      ))
+      .limit(1);
+
+    if (!merchantProfile.length || merchantProfile[0].id !== merchantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Soft delete the product
+    const { products: productsTable } = await import('../db/schema');
+    const result = await db
+      .update(productsTable)
+      .set({
+        deletedAt: new Date()
+      })
+      .where(and(
+        eq(productsTable.merchantId, merchantId),
+        eq(productsTable.commodityId, commodityId),
+        isNull(productsTable.deletedAt)
+      ))
+      .returning();
+
+    if (!result.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Commodity not found for this merchant'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Commodity removed from merchant successfully'
+    });
+  } catch (error) {
+    console.error('Delete merchant commodity error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove commodity from merchant'
     });
   }
 });

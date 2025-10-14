@@ -64,6 +64,7 @@ import uploadRouter from './routes/upload';
 import geolocationRouter from './routes/geolocation';
 import webhookRouter from './routes/webhooks';
 import paymentsRouter from './routes/payments';
+import paymentMethodsRouter from './routes/payment-methods';
 import paystackWebhooksRouter from './routes/paystack-webhooks';
 import escrowStatusRoutes from './routes/escrow-status';
 import { startEscrowAutoReleaseService } from './services/escrow-auto-release';
@@ -294,6 +295,9 @@ app.use('/api/webhooks', webhookRouter);
 
 // Payment routes
 app.use('/api/payments', paymentsRouter);
+
+// Payment methods routes
+app.use('/api/payment-methods', paymentMethodsRouter);
 
 // Cart routes
 app.use('/api/cart', cartRoutes);

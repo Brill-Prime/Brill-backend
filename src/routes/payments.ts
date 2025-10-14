@@ -342,4 +342,203 @@ router.post('/initiate', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/payments/create-intent - Create payment intent
+router.post('/create-intent', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { amount, currency = 'NGN', orderId, metadata } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid amount is required'
+      });
+    }
+
+    // Get user email
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Create payment intent with Paystack
+    const result = await PaystackService.initializeTransaction(
+      user.email,
+      amount,
+      {
+        orderId,
+        userId,
+        ...metadata
+      }
+    );
+
+    if (result.status) {
+      // Create transaction record
+      await db.insert(transactions).values({
+        userId,
+        orderId,
+        amount: amount.toString(),
+        currency,
+        type: 'PAYMENT',
+        status: 'PENDING',
+        paymentMethod: 'PAYSTACK',
+        paystackTransactionId: result.data.reference,
+        transactionRef: result.data.reference,
+        metadata: metadata || {}
+      });
+
+      res.json({
+        success: true,
+        data: {
+          reference: result.data.reference,
+          authorizationUrl: result.data.authorization_url,
+          accessCode: result.data.access_code,
+          amount,
+          currency
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.message || 'Failed to create payment intent'
+      });
+    }
+  } catch (error) {
+    console.error('Create payment intent error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment intent',
+      error: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+    });
+  }
+});
+
+// POST /api/payments/process - Process payment
+router.post('/process', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { reference } = req.body;
+
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment reference is required'
+      });
+    }
+
+    // First, get the transaction to verify ownership
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.paystackTransactionId, reference))
+      .limit(1);
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        message: 'Transaction not found'
+      });
+    }
+
+    // CRITICAL: Verify the transaction belongs to the authenticated user
+    if (transaction.userId !== userId) {
+      // Log the unauthorized attempt for security auditing
+      await db.insert(auditLogs).values({
+        userId,
+        action: 'UNAUTHORIZED_PAYMENT_PROCESS_ATTEMPT',
+        entityType: 'TRANSACTION',
+        details: { 
+          reference, 
+          attemptedUserId: userId,
+          actualUserId: transaction.userId 
+        }
+      });
+
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized: This transaction does not belong to you'
+      });
+    }
+
+    // Verify payment with Paystack
+    const result = await PaystackService.verifyTransaction(reference);
+
+    if (result.status && result.data.status === 'success') {
+      // Update transaction status
+      await db
+        .update(transactions)
+        .set({
+          status: 'COMPLETED',
+          completedAt: new Date()
+        })
+        .where(eq(transactions.id, transaction.id));
+
+      // If orderId is in transaction, verify order ownership and update
+      if (transaction.orderId) {
+        const [order] = await db
+          .select()
+          .from(orders)
+          .where(eq(orders.id, transaction.orderId))
+          .limit(1);
+
+        // Only update order if it exists and belongs to the user
+        if (order && order.customerId === userId) {
+          await db
+            .update(orders)
+            .set({
+              status: 'CONFIRMED',
+              updatedAt: new Date()
+            })
+            .where(eq(orders.id, transaction.orderId));
+        }
+      }
+
+      // Log audit
+      await db.insert(auditLogs).values({
+        userId,
+        action: 'PAYMENT_COMPLETED',
+        entityType: 'TRANSACTION',
+        details: { 
+          reference, 
+          amount: result.data.amount / 100, 
+          orderId: transaction.orderId 
+        }
+      });
+
+      res.json({
+        success: true,
+        message: 'Payment processed successfully',
+        data: {
+          reference,
+          amount: result.data.amount / 100,
+          currency: result.data.currency,
+          status: result.data.status,
+          paidAt: result.data.paid_at
+        }
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Payment verification failed',
+        data: result.data
+      });
+    }
+  } catch (error) {
+    console.error('Process payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process payment',
+      error: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+    });
+  }
+});
+
 export default router;
