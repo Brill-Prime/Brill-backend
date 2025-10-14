@@ -17,7 +17,7 @@ router.get('/profile', requireAuth, async (req, res) => {
       .select()
       .from(identityVerifications)
       .where(eq(identityVerifications.userId, userId))
-      .orderBy(desc(identityVerifications.submittedAt))
+      .orderBy(desc(identityVerifications.createdAt))
       .limit(1);
 
     const documents = await db
@@ -27,18 +27,18 @@ router.get('/profile', requireAuth, async (req, res) => {
         eq(verificationDocuments.userId, userId),
         isNull(verificationDocuments.deletedAt)
       ))
-      .orderBy(desc(verificationDocuments.uploadedAt));
+      .orderBy(desc(verificationDocuments.createdAt));
 
     res.json({
       success: true,
       data: {
         userId,
-        verificationStatus: verifications[0]?.verificationStatus || 'PENDING',
+        verificationStatus: verifications[0]?.status || 'PENDING',
         documents: documents.map(doc => ({
           id: doc.id,
           documentType: doc.documentType,
           status: doc.status,
-          uploadedAt: doc.uploadedAt
+          uploadedAt: doc.createdAt
         }))
       }
     });
@@ -52,7 +52,7 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.post('/documents', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { documentType, documentNumber, documentUrl, fileName, fileSize, mimeType } = req.body;
+    const { documentType, documentNumber, documentUrl } = req.body;
 
     if (!documentType || !documentUrl) {
       return res.status(400).json({
@@ -68,11 +68,7 @@ router.post('/documents', requireAuth, async (req, res) => {
         documentType,
         documentNumber,
         documentUrl,
-        fileName: fileName || 'document',
-        fileSize: fileSize || 0,
-        mimeType: mimeType || 'application/octet-stream',
-        status: 'PENDING',
-        uploadedAt: new Date()
+        status: 'PENDING'
       })
       .returning();
 
@@ -135,16 +131,27 @@ router.delete('/documents/:id', requireAuth, async (req, res) => {
 router.post('/submit', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
-    const { documentType, documentNumber } = req.body;
+    const { documentType, documentNumber, documentImageUrl } = req.body;
+
+    if (!documentType || !documentNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Document type and number are required'
+      });
+    }
 
     const [verification] = await db
       .insert(identityVerifications)
       .values({
         userId,
-        documentType,
-        documentNumber,
-        verificationStatus: 'PENDING',
-        submittedAt: new Date()
+        verificationType: documentType,
+        verificationData: {
+          documentType,
+          documentNumber,
+          documentImageUrl,
+          submittedAt: new Date().toISOString()
+        },
+        status: 'PENDING'
       })
       .returning();
 
@@ -168,15 +175,15 @@ router.get('/status', requireAuth, async (req, res) => {
       .select()
       .from(identityVerifications)
       .where(eq(identityVerifications.userId, userId))
-      .orderBy(desc(identityVerifications.submittedAt))
+      .orderBy(desc(identityVerifications.createdAt))
       .limit(1);
 
     res.json({
       success: true,
       data: {
-        status: verification?.verificationStatus || 'PENDING',
-        submittedAt: verification?.submittedAt || null,
-        reviewedAt: verification?.reviewedAt || null
+        status: verification?.status || 'PENDING',
+        submittedAt: verification?.createdAt || null,
+        verifiedAt: verification?.verifiedAt || null
       }
     });
   } catch (error) {
