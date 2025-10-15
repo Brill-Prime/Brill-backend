@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { db } from '../db/config';
 import { users, auditLogs } from '../db/schema';
@@ -101,6 +100,80 @@ router.put('/', requireAuth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update profile'
+    });
+  }
+});
+
+// POST /api/profile/photo - Upload profile photo
+router.post('/photo', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { photoUrl } = req.body;
+
+    if (!photoUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'Photo URL is required'
+      });
+    }
+
+    // Update user profile picture
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        profilePicture: photoUrl,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    const { password, ...userProfile } = updatedUser;
+
+    res.json({
+      success: true,
+      message: 'Profile photo updated successfully',
+      data: userProfile
+    });
+  } catch (error) {
+    console.error('Upload photo error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload photo'
+    });
+  }
+});
+
+// DELETE /api/profile/photo - Remove profile photo
+router.delete('/photo', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    await db
+      .update(users)
+      .set({
+        profilePicture: null,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Log audit event
+    await db.insert(auditLogs).values({
+      userId,
+      action: 'PROFILE_PHOTO_REMOVED',
+      entityType: 'USER',
+      entityId: userId,
+      details: {}
+    });
+
+    res.json({
+      success: true,
+      message: 'Profile photo removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove profile photo error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove profile photo'
     });
   }
 });

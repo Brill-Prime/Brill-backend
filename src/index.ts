@@ -57,6 +57,7 @@ import analyticsRouter from './routes/analytics';
 import adminDashboardRouter from './routes/admin-dashboard';
 import configRouter from './routes/config';
 import healthRouter from './routes/health';
+import healthCheckRouter from './routes/health-check';
 import driverVerificationRouter from './routes/driver-verification';
 import deliveryAssignmentsRoutes from './routes/delivery-assignments';
 import searchRouter from './routes/search';
@@ -64,6 +65,7 @@ import uploadRouter from './routes/upload';
 import geolocationRouter from './routes/geolocation';
 import webhookRouter from './routes/webhooks';
 import paymentsRouter from './routes/payments';
+import paymentMethodsRouter from './routes/payment-methods';
 import paystackWebhooksRouter from './routes/paystack-webhooks';
 import escrowStatusRoutes from './routes/escrow-status';
 import { startEscrowAutoReleaseService } from './services/escrow-auto-release';
@@ -95,10 +97,17 @@ import profilePaymentMethodRoutes from './routes/profile-payment-methods';
 import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
 import profileRouter from './routes/profile';
 import walletRouter from './routes/wallet';
+import merchantAnalyticsRouter from './routes/merchant-analytics';
 
 const app = express();
 const server = createServer(app);
 const PORT = parseInt(process.env.PORT || '5000', 10);
+
+// Validate critical environment variables
+const SESSION_SECRET = process.env.SESSION_SECRET || 'default-session-secret';
+if (process.env.NODE_ENV === 'production' && SESSION_SECRET === 'default-session-secret') {
+  console.error('⚠️ WARNING: SESSION_SECRET not set in production! Using default is insecure.');
+}
 
 // Trust proxy - required for Replit environment and rate limiting
 app.set('trust proxy', 1);
@@ -135,7 +144,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Session middleware (required for auth)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'default-session-secret',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -268,6 +277,7 @@ app.use('/api/config', configRouter);
 
 // Health check routes
 app.use('/api/health', healthRouter);
+app.use('/api/health-check', healthCheckRouter);
 
 // Apply rate limiting to auth routes
 import RateLimitingService from './services/rateLimiting';
@@ -294,6 +304,9 @@ app.use('/api/webhooks', webhookRouter);
 
 // Payment routes
 app.use('/api/payments', paymentsRouter);
+
+// Payment methods routes
+app.use('/api/payment-methods', paymentMethodsRouter);
 
 // Cart routes
 app.use('/api/cart', cartRoutes);
@@ -350,8 +363,10 @@ app.use('/api/profile/payment-methods', profilePaymentMethodRoutes);
 app.use('/api/profile/privacy-settings', profilePrivacySettingsRoutes);
 app.use('/api/profile', profileRouter);
 
-// Deprecated wallet routes (returns 410 Gone)
-app.use('/api/wallet', walletRouter);
+// Wallet functionality removed - use /api/payments instead
+
+// Register merchant analytics route
+app.use('/api/merchants', merchantAnalyticsRouter);
 
 // Basic route
 app.get('/', (req, res) => {

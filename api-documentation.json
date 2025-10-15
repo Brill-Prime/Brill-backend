@@ -354,7 +354,7 @@
       {
         "method": "POST",
         "path": "/api/payments/initialize",
-        "description": "Initialize payment",
+        "description": "Initialize payment (Wallet removed - use CARD or BANK_TRANSFER)",
         "requiresAuth": true,
         "requestBody": { "orderId": "number", "amount": "number", "paymentMethod": "enum: CARD | BANK_TRANSFER" }
       },

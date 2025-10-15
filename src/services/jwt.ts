@@ -5,7 +5,13 @@ import { users } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY || 'default-development-secret-key';
+if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-development-secret-key' || !JWT_SECRET)) {
+  throw new Error('JWT_SECRET must be set in environment variables for production');
+}
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'default-refresh-secret-key';
+if (process.env.NODE_ENV === 'production' && JWT_REFRESH_SECRET === 'default-refresh-secret-key') {
+  throw new Error('JWT_REFRESH_SECRET must be set in environment variables for production');
+}
 
 if (process.env.NODE_ENV === 'production' && (JWT_SECRET === 'default-development-secret-key' || !JWT_SECRET)) {
   throw new Error('JWT_SECRET must be set in environment variables for production');

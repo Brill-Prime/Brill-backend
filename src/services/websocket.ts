@@ -1,4 +1,3 @@
-
 // Load 'ws' dynamically at runtime to avoid ESM/CommonJS export mismatches when bundling
 let wsModule: any = null;
 import { Server } from 'http';
@@ -11,7 +10,7 @@ interface AuthenticatedWebSocket {
   // and to preserve the dynamic require usage already present in the file.
   readyState?: number;
   send?: (data: any) => void;
-  
+
   close?: (code?: number, reason?: string) => void;
   on?: (event: string, cb: (...args: any[]) => void) => void;
   // Authentication metadata attached by this service
@@ -130,7 +129,7 @@ export class WebSocketService {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-      
+
       // Use Firebase if available, otherwise use JWT data directly
       const db = getDb();
       if (db) {
@@ -217,7 +216,7 @@ export class WebSocketService {
     try {
       const { orderId, latitude, longitude } = data;
       const db = getDb();
-      
+
       if (db) {
         const trackingRef = db.ref(`tracking/${orderId}`);
         await trackingRef.set({ driverId: ws.userId, latitude, longitude, timestamp: new Date().toISOString() });
@@ -236,7 +235,7 @@ export class WebSocketService {
   private async handleCallSignal(ws: AuthenticatedWebSocket, data: any) {
     try {
       const { peerId, signalType, signalData } = data;
-      
+
       await this.sendNotificationToUser(peerId.toString(), {
         type: 'call_signal',
         signalType,
@@ -260,7 +259,7 @@ export class WebSocketService {
   private async handleJoinCall(ws: AuthenticatedWebSocket, data: any) {
     try {
       const { callId, peerId } = data;
-      
+
       await this.sendNotificationToUser(peerId.toString(), {
         type: 'peer_joined_call',
         callId,
@@ -283,7 +282,7 @@ export class WebSocketService {
   private async handleLeaveCall(ws: AuthenticatedWebSocket, data: any) {
     try {
       const { callId, peerId } = data;
-      
+
       await this.sendNotificationToUser(peerId.toString(), {
         type: 'peer_left_call',
         callId,

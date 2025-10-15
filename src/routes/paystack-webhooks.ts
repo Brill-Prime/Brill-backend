@@ -23,7 +23,13 @@ const verifyPaystackWebhook = (req: express.Request, res: express.Response, next
 
   const signature = req.headers['x-paystack-signature'] as string;
 
-  if (hash === signature) {
+  // Constant-time comparison to prevent timing attacks
+  const isValid = crypto.timingSafeEqual(
+    Buffer.from(hash),
+    Buffer.from(signature)
+  );
+
+  if (isValid) {
     next();
   } else {
     console.error('Invalid webhook signature received');

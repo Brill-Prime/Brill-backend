@@ -350,4 +350,223 @@ router.put('/:id/read', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/notifications/:id - Delete notification
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const notificationId = parseInt(req.params.id);
+    
+    if (isNaN(notificationId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid notification ID'
+      });
+    }
+
+    // Get the notification to check ownership
+    const notification = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.id, notificationId))
+      .limit(1);
+
+    if (!notification.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    // Check if user can delete this notification (owner or admin)
+    if (req.user!.role !== 'ADMIN' && req.user!.id !== notification[0].userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Delete notification
+    await db
+      .delete(notifications)
+      .where(eq(notifications.id, notificationId));
+
+    // Log audit
+    await logAudit(
+      req.user!.id,
+      'NOTIFICATION_DELETED',
+      'NOTIFICATION',
+      notificationId
+    );
+
+    res.json({
+      success: true,
+      message: 'Notification deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete notification'
+    });
+  }
+});
+
+// GET /api/notifications/preferences - Get notification preferences
+router.get('/preferences', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    const [user] = await db
+      .select({
+        metadata: users.metadata
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const preferences = (user?.metadata as any)?.notificationPreferences || {
+      email: true,
+      push: true,
+      sms: false,
+      orderUpdates: true,
+      promotions: true,
+      newsletter: false
+    };
+
+    res.json({
+      success: true,
+      data: preferences
+    });
+
+  } catch (error) {
+    console.error('Get notification preferences error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get notification preferences'
+    });
+  }
+});
+
+// PUT /api/notifications/preferences - Update notification preferences
+router.put('/preferences', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { email, push, sms, orderUpdates, promotions, newsletter } = req.body;
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const currentMetadata = (user?.metadata as any) || {};
+    const updatedPreferences = {
+      email: email !== undefined ? email : currentMetadata.notificationPreferences?.email ?? true,
+      push: push !== undefined ? push : currentMetadata.notificationPreferences?.push ?? true,
+      sms: sms !== undefined ? sms : currentMetadata.notificationPreferences?.sms ?? false,
+      orderUpdates: orderUpdates !== undefined ? orderUpdates : currentMetadata.notificationPreferences?.orderUpdates ?? true,
+      promotions: promotions !== undefined ? promotions : currentMetadata.notificationPreferences?.promotions ?? true,
+      newsletter: newsletter !== undefined ? newsletter : currentMetadata.notificationPreferences?.newsletter ?? false
+    };
+
+    await db
+      .update(users)
+      .set({
+        metadata: {
+          ...currentMetadata,
+          notificationPreferences: updatedPreferences
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, userId));
+
+    // Log audit
+    await logAudit(
+      userId,
+      'NOTIFICATION_PREFERENCES_UPDATED',
+      'USER',
+      userId,
+      updatedPreferences
+    );
+
+    res.json({
+      success: true,
+      message: 'Notification preferences updated successfully',
+      data: updatedPreferences
+    });
+
+  } catch (error) {
+    console.error('Update notification preferences error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update notification preferences'
+    });
+  }
+});
+
+// GET /api/notifications/unread-count - Get unread notification count
+router.get('/unread-count', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    const [result] = await db
+      .select({ count: sql`count(*)` })
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false)
+      ));
+
+    const unreadCount = parseInt(result.count as string) || 0;
+
+    res.json({
+      success: true,
+      data: {
+        unreadCount
+      }
+    });
+
+  } catch (error) {
+    console.error('Get unread count error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get unread count'
+    });
+  }
+});
+
+// PUT /api/notifications/mark-all-read - Mark all notifications as read
+router.put('/mark-all-read', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false)
+      ));
+
+    // Log audit
+    await logAudit(
+      userId,
+      'ALL_NOTIFICATIONS_READ',
+      'NOTIFICATION'
+    );
+
+    res.json({
+      success: true,
+      message: 'All notifications marked as read'
+    });
+
+  } catch (error) {
+    console.error('Mark all notifications as read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark all notifications as read'
+    });
+  }
+});
+
 export default router;

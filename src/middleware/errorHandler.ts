@@ -2,6 +2,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 
+export class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    public message: string,
+    public code?: string,
+    public errors?: any[]
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
 export const errorHandler = (
   error: any,
   req: Request,
@@ -9,6 +21,16 @@ export const errorHandler = (
   next: NextFunction
 ) => {
   console.error('Error:', error);
+
+  // AppError - custom application errors
+  if (error instanceof AppError) {
+    return res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+      code: error.code,
+      errors: error.errors
+    });
+  }
 
   // Zod validation errors
   if (error instanceof z.ZodError) {

@@ -36,14 +36,18 @@ async function initializeGmailOAuth() {
 }
 
 // Initialize Gmail OAuth on startup
-initializeGmailOAuth();
+initializeGmailOAuth().then(() => {
+  // Check environment variables - email service is optional for development
+  const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
 
-// Check environment variables - email service is optional for development
-const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
-
-if (!emailEnabled && !gmailOAuthEnabled) {
-  console.warn('⚠️ Email service disabled: Email credentials not set');
-}
+  if (!emailEnabled && !gmailOAuthEnabled) {
+    console.warn('⚠️ Email service disabled: No email credentials or OAuth configured');
+  } else if (gmailOAuthEnabled) {
+    console.log('✅ Email service enabled via Gmail OAuth');
+  } else if (emailEnabled) {
+    console.log('✅ Email service enabled via SMTP');
+  }
+});
 
 const transporter = emailEnabled ? nodemailer.createTransport(
   SMTP_HOST ? {
