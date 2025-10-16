@@ -4,10 +4,9 @@
   "description": "Brillprime backend",
   "main": "dist/index.js",
   "scripts": {
-    "build": "npm run build:esbuild",
-  "build:esbuild": "esbuild src/index.ts --bundle --platform=node --target=node18 --outfile=dist/index.js --external:bcrypt",
+    "build": "npx -p typescript tsc",
     "start": "node dist/index.js",
-    "dev": "npx ts-node src/index.ts",
+    "dev": "NODE_OPTIONS='--max-old-space-size=4096' npx ts-node --project tsconfig.server.json src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",

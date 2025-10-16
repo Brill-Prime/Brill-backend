@@ -6,13 +6,13 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import admin from 'firebase-admin';
 import EmailService from '../services/email';
-import { createRateLimiter } from '../services/rateLimiting';
+import RateLimitingService from '../services/rateLimiting';
 
 const router = express.Router();
 
-const authRateLimiter = createRateLimiter({
+const authRateLimiter = RateLimitingService.createRateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts
+  maxRequests: 5, // 5 attempts
   message: 'Too many authentication attempts, please try again later'
 });
 

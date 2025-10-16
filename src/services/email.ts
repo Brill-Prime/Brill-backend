@@ -24,6 +24,9 @@ interface EmailTemplate {
 let gmailOAuthEnabled = false;
 let gmailUserEmail = '';
 
+// Check environment variables - email service is optional for development
+const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
+
 async function initializeGmailOAuth() {
   try {
     await getUncachableGmailClient();
@@ -37,9 +40,6 @@ async function initializeGmailOAuth() {
 
 // Initialize Gmail OAuth on startup
 initializeGmailOAuth().then(() => {
-  // Check environment variables - email service is optional for development
-  const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
-
   if (!emailEnabled && !gmailOAuthEnabled) {
     console.warn('⚠️ Email service disabled: No email credentials or OAuth configured');
   } else if (gmailOAuthEnabled) {
