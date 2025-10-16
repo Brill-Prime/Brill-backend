@@ -11,9 +11,9 @@ const databaseUrl = process.env.DATABASE_URL!;
 const pgSslMode = (process.env.PGSSLMODE || '').toLowerCase();
 const shouldUseSsl =
   process.env.NODE_ENV === 'production' ||
-  pgSslMode === 'require' ||
-  /sslmode=require/i.test(databaseUrl) ||
-  /ssl=true/i.test(databaseUrl);
+  pgSslMode === 'disable' ||
+  /sslmode=disable/i.test(databaseUrl) ||
+  /ssl=false/i.test(databaseUrl);
 
 const sslOption = shouldUseSsl ? { rejectUnauthorized: false } : false;
 
