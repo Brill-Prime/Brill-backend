@@ -14,9 +14,9 @@ try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       adminApp = admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        databaseURL: process.env.FIREBASE_DATABASE_URL,
-        storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+        projectId: 'brillprimefirebase',
+        databaseURL: 'https://brillprimefirebase-default-rtdb.firebaseio.com',
+        storageBucket: 'brillprimefirebase.firebasestorage.app'
       });
       console.log('✅ Firebase Admin SDK initialized with service account');
 
