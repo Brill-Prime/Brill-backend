@@ -17,8 +17,7 @@ export default {
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: databaseUrl,
-    ssl: isLocalhost ? false : { rejectUnauthorized: false },
+    url: isLocalhost ? databaseUrl : `${databaseUrl}?sslmode=require`,
   },
   verbose: true,
   strict: true,
