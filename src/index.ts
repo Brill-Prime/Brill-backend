@@ -98,6 +98,8 @@ import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
 import profileRouter from './routes/profile';
 import walletRouter from './routes/wallet';
 import merchantAnalyticsRouter from './routes/merchant-analytics';
+import { errorHandler } from './middleware/errorHandler';
+import MonitoringService from './services/monitoring';
 
 const app = express();
 const server = createServer(app);
@@ -157,6 +159,9 @@ app.use(session({
 
 // Add response time tracking middleware
 app.use(responseTimeMiddleware);
+
+// Add request monitoring
+app.use(MonitoringService.trackRequest);
 
 // Auth routes
 app.use('/api/auth', authRouter);
@@ -406,6 +411,9 @@ app.get('/health', (req, res) => {
 
   res.json(healthData);
 });
+
+// Error handler middleware (must be last)
+app.use(errorHandler);
 
 // Start escrow auto-release service
 startEscrowAutoReleaseService();
