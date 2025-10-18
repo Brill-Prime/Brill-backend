@@ -98,8 +98,10 @@ import profilePrivacySettingsRoutes from './routes/profile-privacy-settings';
 import profileRouter from './routes/profile';
 import walletRouter from './routes/wallet';
 import merchantAnalyticsRouter from './routes/merchant-analytics';
+import firebaseSyncRouter from './routes/firebase-sync';
 import { errorHandler } from './middleware/errorHandler';
 import MonitoringService from './services/monitoring';
+import { startFirebaseSyncService } from './services/firebase-sync';
 
 const app = express();
 const server = createServer(app);
@@ -376,6 +378,9 @@ app.use('/api/profile', profileRouter);
 // Register merchant analytics route
 app.use('/api/merchants', merchantAnalyticsRouter);
 
+// Firebase sync routes
+app.use('/api/firebase', firebaseSyncRouter);
+
 // Basic route
 app.get('/', (req, res) => {
   res.json({
@@ -417,6 +422,9 @@ app.use(errorHandler);
 
 // Start escrow auto-release service
 startEscrowAutoReleaseService();
+
+// Start Firebase sync service
+startFirebaseSyncService();
 
 // Start server
 server.listen(PORT, '0.0.0.0', async () => {
