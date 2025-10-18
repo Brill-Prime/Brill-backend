@@ -13,6 +13,7 @@ export default {
   dialect: 'postgresql',
   dbCredentials: {
     url: databaseUrl,
+    ssl: 'require',
   },
   verbose: true,
   strict: true,
