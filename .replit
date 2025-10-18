@@ -8,7 +8,7 @@ expertMode = true
 integrations = ["javascript_database:1.0.0", "google-mail:1.0.0"]
 
 [workflows]
-runButton = "Server"
+runButton = "Project"
 
 [[workflows.workflow]]
 name = "Development"
@@ -33,11 +33,12 @@ name = "Server"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm start"
+waitForPort = 5000
 
 [[workflows.workflow]]
 name = "Setup"
@@ -70,7 +71,7 @@ localPort = 5000
 externalPort = 80
 
 [[ports]]
-localPort = 42903
+localPort = 45049
 externalPort = 3000
 
 [deployment]

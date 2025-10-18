@@ -16,17 +16,17 @@ class MonitoringService {
     totalResponseTime: 0
   };
 
-  static trackRequest(req: Request, res: Response, next: NextFunction) {
+  static trackRequest = (req: Request, res: Response, next: NextFunction) => {
     const start = Date.now();
     
     res.on('finish', () => {
       const duration = Date.now() - start;
-      this.metrics.requests++;
-      this.metrics.totalResponseTime += duration;
-      this.metrics.avgResponseTime = this.metrics.totalResponseTime / this.metrics.requests;
+      MonitoringService.metrics.requests++;
+      MonitoringService.metrics.totalResponseTime += duration;
+      MonitoringService.metrics.avgResponseTime = MonitoringService.metrics.totalResponseTime / MonitoringService.metrics.requests;
       
       if (res.statusCode >= 400) {
-        this.metrics.errors++;
+        MonitoringService.metrics.errors++;
       }
 
       // Log slow requests with context
