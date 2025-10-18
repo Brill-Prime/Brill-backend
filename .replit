@@ -8,7 +8,7 @@ expertMode = true
 integrations = ["javascript_database:1.0.0", "google-mail:1.0.0"]
 
 [workflows]
-runButton = "Project"
+runButton = "Server"
 
 [[workflows.workflow]]
 name = "Development"
