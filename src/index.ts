@@ -1,5 +1,4 @@
-import 'dotenv/config';
-import './config/firebase-admin';
+
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
