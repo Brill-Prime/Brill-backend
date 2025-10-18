@@ -191,6 +191,9 @@ app.use('/api/fuel-orders', fuelOrdersRouter);
 // Delivery feedback management routes
 app.use('/api/delivery-feedback', deliveryFeedbackRouter);
 
+// Ratings management routes
+app.use('/api/ratings', ratingsRouter);
+
 // Support tickets management routes
 app.use('/api/support-tickets', supportTicketsRouter);
 
@@ -347,8 +350,8 @@ app.use('/api', adminEscrowManagementRouter);
 app.use('/api', adminModerationRouter);
 app.use('/api', adminControlCenterRouter);
 app.use('/api', callsRouter);
-app.use(transactionsMerchantRouter);
-app.use(transactionsCustomerRouter);
+app.use('/api', transactionsMerchantRouter);
+app.use('/api', transactionsCustomerRouter);
 app.use('/api/biometric', biometricAuthRouter);
 app.use('/api/calls', callsRouter);
 app.use('/api/map', mapTrackingRouter);
