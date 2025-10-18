@@ -26,9 +26,12 @@ const pool = new Pool({
   max: 20, // Maximum number of clients in the pool
   min: 5, // Minimum number of clients in the pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 10000, // Increased to 10 seconds for remote databases
   // Reconnection settings
   allowExitOnIdle: false,
+  // Additional settings for better connection stability
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
 });
 
 // Handle pool errors
