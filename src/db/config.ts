@@ -11,11 +11,21 @@ if (!process.env.DATABASE_URL) {
 
 const databaseUrl = process.env.DATABASE_URL;
 
+// Determine SSL settings based on environment and database URL
+const isLocalhost = 
+  databaseUrl.includes('localhost') || 
+  databaseUrl.includes('127.0.0.1');
+
+// For Replit PostgreSQL, we need to remove sslmode=disable and force SSL
+const cleanedUrl = isLocalhost 
+  ? databaseUrl 
+  : databaseUrl.replace(/[?&]sslmode=disable/g, '');
+
 // Database connection pool with production-ready settings
 const pool = new Pool({
-  connectionString: databaseUrl,
-  // Handle SSL configuration for production (Render)
-  ssl: databaseUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+  connectionString: cleanedUrl,
+  // Handle SSL configuration - most hosted databases require SSL
+  ssl: isLocalhost ? false : { rejectUnauthorized: false },
   max: 20, // Maximum number of clients in the pool
   min: 5, // Minimum number of clients in the pool
   idleTimeoutMillis: 30000,

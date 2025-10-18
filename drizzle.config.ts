@@ -5,24 +5,26 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Determine SSL settings. Many hosted Postgres providers require SSL/TLS.
-// Allow override via PGSSLMODE or NODE_ENV=production. Also detect common
-// ssl parameters in the DATABASE_URL itself (e.g. "ssl=true" or "sslmode=require").
 const databaseUrl = process.env.DATABASE_URL!;
-const pgSslMode = (process.env.PGSSLMODE || '').toLowerCase();
-const shouldUseSsl =
-  process.env.NODE_ENV === 'production' ||
-  pgSslMode === 'disable' ||
-  /sslmode=disable/i.test(databaseUrl) ||
-  /ssl=false/i.test(databaseUrl);
 
-const sslOption = shouldUseSsl ? { rejectUnauthorized: false } : false;
+// Determine if this is a localhost connection
+const isLocalhost =
+  databaseUrl.includes('localhost') ||
+  databaseUrl.includes('127.0.0.1');
+
+// For Replit PostgreSQL, we need to remove sslmode=disable and force SSL
+const cleanedUrl = isLocalhost 
+  ? databaseUrl 
+  : databaseUrl.replace(/[?&]sslmode=disable/g, '');
+
+const sslOption = isLocalhost ? false : { rejectUnauthorized: false };
 
 export default {
   schema: './src/db/schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: databaseUrl,
+    url: cleanedUrl,
     ssl: sslOption,
   },
   verbose: true,

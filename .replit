@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "python-3.11"]
+modules = ["bash", "nix", "nodejs-20", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 packages = ["postgresql_16"]
@@ -37,7 +37,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run dev"
+args = "npm start"
 
 [[workflows.workflow]]
 name = "Setup"
