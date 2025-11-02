@@ -674,4 +674,303 @@ router.post('/resend-otp', authRateLimiter, async (req, res) => {
   }
 });
 
+// POST /api/auth/logout - Logout user
+router.post('/logout', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+
+    // Log security event
+    await db.insert(securityLogs).values({
+      userId,
+      action: 'LOGOUT',
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'] || 'Unknown',
+      success: true,
+      details: { timestamp: new Date().toISOString() }
+    });
+
+    // Destroy session if exists
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) console.error('Session destruction error:', err);
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to logout'
+    });
+  }
+});
+
+// POST /api/auth/refresh - Refresh access token
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    // Verify refresh token
+    let decoded: any;
+    try {
+      decoded = await verifyToken(refreshToken);
+    } catch (error: any) {
+      return res.status(401).json({
+        success: false,
+        message: error.message === 'TOKEN_EXPIRED' ? 'Refresh token expired. Please login again.' : 'Invalid refresh token',
+        code: error.message
+      });
+    }
+
+    // Get user from database
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(and(
+        eq(users.id, decoded.id || decoded.userId),
+        isNull(users.deletedAt)
+      ))
+      .limit(1);
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found or account deactivated'
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated'
+      });
+    }
+
+    // Generate new tokens
+    const accessToken = generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    }, '24h');
+
+    const newRefreshToken = generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role
+    }, '7d');
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: {
+        accessToken,
+        refreshToken: newRefreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          isVerified: user.isVerified
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh token'
+    });
+  }
+});
+
+// POST /api/auth/verify-email - Verify email with OTP
+router.post('/verify-email', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and OTP are required'
+      });
+    }
+
+    // Find the OTP token
+    const [token] = await db
+      .select({
+        token: mfaTokens,
+        user: users
+      })
+      .from(mfaTokens)
+      .innerJoin(users, eq(mfaTokens.userId, users.id))
+      .where(and(
+        eq(users.email, email),
+        eq(mfaTokens.token, otp),
+        eq(mfaTokens.method, 'EMAIL_VERIFICATION'),
+        eq(mfaTokens.isUsed, false)
+      ))
+      .limit(1);
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired OTP'
+      });
+    }
+
+    // Check if token is expired
+    if (new Date() > token.token.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    // Mark token as used
+    await db
+      .update(mfaTokens)
+      .set({
+        isUsed: true,
+        usedAt: new Date()
+      })
+      .where(eq(mfaTokens.id, token.token.id));
+
+    // Mark user as verified
+    await db
+      .update(users)
+      .set({
+        isVerified: true,
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, token.user.id));
+
+    // Log security event
+    await db.insert(securityLogs).values({
+      userId: token.user.id,
+      action: 'EMAIL_VERIFIED',
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'] || 'Unknown',
+      success: true,
+      details: { email }
+    });
+
+    res.json({
+      success: true,
+      message: 'Email verified successfully'
+    });
+  } catch (error) {
+    console.error('Email verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify email'
+    });
+  }
+});
+
+// POST /api/auth/resend-otp - Resend verification OTP
+router.post('/resend-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Find user
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(and(
+        eq(users.email, email),
+        isNull(users.deletedAt)
+      ))
+      .limit(1);
+
+    if (!user) {
+      // Don't reveal if email exists or not for security
+      return res.json({
+        success: true,
+        message: 'If the email exists, a new OTP has been sent'
+      });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already verified'
+      });
+    }
+
+    // Check rate limiting - max 3 OTPs per hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentTokens = await db
+      .select()
+      .from(mfaTokens)
+      .where(and(
+        eq(mfaTokens.userId, user.id),
+        eq(mfaTokens.method, 'EMAIL_VERIFICATION'),
+        gte(mfaTokens.createdAt, oneHourAgo)
+      ));
+
+    if (recentTokens.length >= 3) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many OTP requests. Please try again later.'
+      });
+    }
+
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Save OTP token
+    await db.insert(mfaTokens).values({
+      userId: user.id,
+      token: otp,
+      method: 'EMAIL_VERIFICATION',
+      expiresAt,
+      isUsed: false
+    });
+
+    // Send email (implement your email service)
+    // await EmailService.sendVerificationEmail(user.email, otp);
+    console.log(`Verification OTP for ${user.email}: ${otp}`);
+
+    // Log security event
+    await db.insert(securityLogs).values({
+      userId: user.id,
+      action: 'OTP_RESENT',
+      ipAddress: req.ip || '0.0.0.0',
+      userAgent: req.headers['user-agent'] || 'Unknown',
+      success: true,
+      details: { email }
+    });
+
+    res.json({
+      success: true,
+      message: 'A new verification code has been sent to your email'
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to resend OTP'
+    });
+  }
+});
+
 export default router;
