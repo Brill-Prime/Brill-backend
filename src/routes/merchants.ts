@@ -1101,4 +1101,60 @@ router.delete('/:merchantId/commodities/:commodityId', requireAuth, async (req, 
   }
 });
 
+// DELETE /api/merchants/:id - Delete a merchant profile
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const merchantId = parseInt(req.params.id);
+    if (isNaN(merchantId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid merchant ID'
+      });
+    }
+
+    // Check if merchant exists
+    const existingMerchant = await db
+      .select()
+      .from(merchantProfiles)
+      .where(eq(merchantProfiles.id, merchantId))
+      .limit(1);
+
+    if (existingMerchant.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Merchant profile not found'
+      });
+    }
+
+    // Soft delete the merchant profile
+    await db
+      .update(merchantProfiles)
+      .set({
+        deletedAt: new Date(),
+        isActive: false
+      })
+      .where(eq(merchantProfiles.id, merchantId));
+
+    // Log the deletion
+    await logAuditEvent(
+      req.user!.id,
+      'DELETE_MERCHANT_PROFILE',
+      merchantId,
+      { merchantId }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant profile deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting merchant profile:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete merchant profile',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 export default router;

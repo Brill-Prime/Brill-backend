@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from '../db/config';
 import { commodities } from '../db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 import { requireAuth, requireRole } from '../utils/auth';
 import { z } from 'zod';
 
@@ -13,6 +13,69 @@ const commoditySchema = z.object({
   price: z.number().positive(),
   unit: z.string().optional(),
   isAvailable: z.boolean().optional(),
+});
+
+// GET /api/commodities - Get all commodities
+router.get('/', async (req, res) => {
+  try {
+    const { page = '1', limit = '20', search = '', sortBy = 'name', sortOrder = 'asc' } = req.query;
+    
+    const pageNumber = parseInt(page as string);
+    const limitNumber = parseInt(limit as string);
+    const offset = (pageNumber - 1) * limitNumber;
+    
+    // Build query
+    let query = db
+      .select()
+      .from(commodities)
+      .where(isNull(commodities.deletedAt));
+    
+    // Apply search if provided
+    if (search) {
+      query = query.where(
+        eq(commodities.name, `%${search}%`)
+      );
+    }
+    
+    // Apply sorting
+    if (sortBy && sortOrder) {
+      // This is a simplified approach - in a real app, you'd need to handle different sort fields properly
+      if (sortOrder === 'desc') {
+        query = query.orderBy(desc(commodities[sortBy as keyof typeof commodities]));
+      } else {
+        query = query.orderBy(commodities[sortBy as keyof typeof commodities]);
+      }
+    }
+    
+    // Apply pagination
+    query = query.limit(limitNumber).offset(offset);
+    
+    const results = await query;
+    
+    // Get total count for pagination
+    const totalCount = await db
+      .select({ count: sql`count(*)` })
+      .from(commodities)
+      .where(isNull(commodities.deletedAt));
+    
+    return res.status(200).json({
+      success: true,
+      data: results,
+      pagination: {
+        total: totalCount[0].count,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalCount[0].count / limitNumber)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching commodities:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch commodities',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
 // Create a new commodity

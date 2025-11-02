@@ -1,12 +1,14 @@
 import nodemailer from 'nodemailer';
 import { getUncachableGmailClient, getGmailUserEmail } from './gmail-client';
 
-const GMAIL_USER = process.env.GMAIL_USER;
-const GMAIL_PASS = process.env.GMAIL_PASS;
-const SMTP_HOST = process.env.SMTP_HOST;
-const SMTP_PORT = process.env.SMTP_PORT;
-const SMTP_USER = process.env.SMTP_USER;
-const SMTP_PASS = process.env.SMTP_PASS;
+// Prefer EMAIL_* env vars from .env, fall back to older names for compatibility
+// Also support Supabase SMTP env vars (SUPABASE_SMTP_*) when configured
+const EMAIL_FROM = process.env.EMAIL_FROM;
+const EMAIL_HOST = process.env.EMAIL_HOST || process.env.SUPABASE_SMTP_HOST || process.env.SMTP_HOST;
+const EMAIL_PORT = process.env.EMAIL_PORT || process.env.SUPABASE_SMTP_PORT || process.env.SMTP_PORT;
+const EMAIL_USER = process.env.EMAIL_USER || process.env.SUPABASE_SMTP_USER || process.env.SMTP_USER || process.env.GMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS || process.env.SUPABASE_SMTP_PASS || process.env.SMTP_PASS || process.env.GMAIL_PASS;
+const EMAIL_SECURE = process.env.EMAIL_SECURE; // optional, 'true' or 'false'
 
 interface EmailResult {
   success: boolean;
@@ -25,7 +27,7 @@ let gmailOAuthEnabled = false;
 let gmailUserEmail = '';
 
 // Check environment variables - email service is optional for development
-const emailEnabled = (GMAIL_USER && GMAIL_PASS) || (SMTP_HOST && SMTP_USER && SMTP_PASS);
+const emailEnabled = (EMAIL_USER && EMAIL_PASS) || (process.env.GMAIL_USER && process.env.GMAIL_PASS);
 
 async function initializeGmailOAuth() {
   try {
@@ -49,23 +51,35 @@ initializeGmailOAuth().then(() => {
   }
 });
 
-const transporter = emailEnabled ? nodemailer.createTransport(
-  SMTP_HOST ? {
-    host: SMTP_HOST,
-    port: parseInt(SMTP_PORT || '587'),
-    secure: false,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  } : {
-    service: 'gmail',
-    auth: {
-      user: GMAIL_USER,
-      pass: GMAIL_PASS,
-    },
+const transporter = emailEnabled ? (() => {
+  // If explicit SMTP/EMAIL host provided, use it
+  if (EMAIL_HOST) {
+    const port = parseInt(EMAIL_PORT || '587');
+    const secure = EMAIL_SECURE ? EMAIL_SECURE === 'true' : (port === 465);
+    return nodemailer.createTransport({
+      host: EMAIL_HOST,
+      port,
+      secure,
+      auth: {
+        user: EMAIL_USER,
+        pass: EMAIL_PASS,
+      },
+    });
   }
-) : null;
+
+  // Fallback to Gmail SMTP using user/pass
+  if (process.env.GMAIL_USER && process.env.GMAIL_PASS) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_PASS,
+      },
+    });
+  }
+
+  return null;
+})() : null;
 
 class EmailService {
   // Base email sending function
@@ -95,9 +109,9 @@ class EmailService {
       };
     }
 
-    const fromEmail = SMTP_USER || GMAIL_USER;
+    const fromEmail = EMAIL_FROM || EMAIL_USER || process.env.GMAIL_USER || 'noreply@brillprime.com';
     const mailOptions = {
-      from: `BrillPrime <${fromEmail}>`,
+      from: `${fromEmail.startsWith('"') ? fromEmail : 'BrillPrime <' + fromEmail + '>'}`,
       to: Array.isArray(to) ? to.join(', ') : to,
       subject,
       html,

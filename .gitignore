@@ -1,16 +1,26 @@
 # Build output
 dist/
 build/
+lib/
+out/
 
 # Dependencies
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Environment variables
 .env
 .env.local
 .env.*.local
+.env.development
+.env.test
+.env.production
+*.env
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -21,7 +31,12 @@ lerna-debug.log*
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.sublime-project
+*.sublime-workspace
 .DS_Store
 *.suo
 *.ntvs*
@@ -32,11 +47,47 @@ lerna-debug.log*
 # Testing
 coverage/
 .nyc_output/
+.jest-cache/
+jest-report/
 
 # Temporary files
 *.tmp
 *.temp
 .cache/
+.eslintcache
+.tsbuildinfo
+tsconfig.tsbuildinfo
 
 # OS files
 Thumbs.db
+.DS_Store
+desktop.ini
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+google-services.json
+firebase-*.json
+serviceAccount*.json
+*-credentials.json
+*-key.json
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Local development
+.vercel
+.netlify
+.serverless/
+.dynamodb/
+
+# Uploads and generated content
+uploads/
+public/uploads/
+tmp/

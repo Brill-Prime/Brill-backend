@@ -2,8 +2,8 @@
 import express from 'express';
 import { z } from 'zod';
 import { db } from '../db/config';
-import { notifications, users, auditLogs } from '../db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { notifications, users, auditLogs, userDevices } from '../db/schema';
+import { eq, and, desc, sql, gte, lte } from 'drizzle-orm';
 import { requireAuth, requireAdmin } from '../utils/auth';
 
 const router = express.Router();
@@ -542,7 +542,7 @@ router.put('/mark-all-read', requireAuth, async (req, res) => {
 
     await db
       .update(notifications)
-      .set({ isRead: true })
+      .set({ isRead: true, updatedAt: new Date() })
       .where(and(
         eq(notifications.userId, userId),
         eq(notifications.isRead, false)
@@ -555,16 +555,146 @@ router.put('/mark-all-read', requireAuth, async (req, res) => {
       'NOTIFICATION'
     );
 
-    res.json({
+    return res.status(200).json({
       success: true,
       message: 'All notifications marked as read'
     });
 
   } catch (error) {
-    console.error('Mark all notifications as read error:', error);
-    res.status(500).json({
+    console.error('Error marking all notifications as read:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Failed to mark all notifications as read'
+      message: 'Failed to mark all notifications as read',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/notifications/register-device - Register a device for push notifications
+router.post('/register-device', requireAuth, async (req, res) => {
+  try {
+    const deviceSchema = z.object({
+      deviceToken: z.string().min(1, 'Device token is required'),
+      deviceType: z.enum(['ios', 'android', 'web'], { 
+        errorMap: () => ({ message: 'Device type must be ios, android, or web' })
+      }),
+      deviceName: z.string().optional()
+    });
+
+    const validatedData = deviceSchema.parse(req.body);
+    const userId = req.user!.id;
+
+    // Check if device already registered
+    const existingDevice = await db.query.userDevices.findFirst({
+      where: and(
+        eq(userDevices.userId, userId),
+        eq(userDevices.deviceToken, validatedData.deviceToken)
+      )
+    });
+
+    if (existingDevice) {
+      // Update existing device
+      await db
+        .update(userDevices)
+        .set({
+          lastActive: new Date(),
+          deviceName: validatedData.deviceName || existingDevice.deviceName
+        })
+        .where(eq(userDevices.id, existingDevice.id));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Device registration updated',
+        data: { deviceId: existingDevice.id }
+      });
+    }
+
+    // Register new device
+    const [newDevice] = await db
+      .insert(userDevices)
+      .values({
+        userId,
+        deviceToken: validatedData.deviceToken,
+        deviceType: validatedData.deviceType,
+        deviceName: validatedData.deviceName || `${validatedData.deviceType} device`,
+        isActive: true,
+        lastActive: new Date()
+      })
+      .returning();
+
+    await logAudit(
+      userId,
+      'REGISTER_DEVICE',
+      'USER_DEVICE',
+      newDevice.id,
+      { deviceType: validatedData.deviceType }
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Device registered successfully',
+      data: { deviceId: newDevice.id }
+    });
+  } catch (error) {
+    console.error('Error registering device:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to register device',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/notifications/history - Get notification history
+router.get('/history', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const { page = '1', limit = '20', startDate, endDate } = req.query;
+    
+    const pageNumber = parseInt(page as string);
+    const limitNumber = parseInt(limit as string);
+    const offset = (pageNumber - 1) * limitNumber;
+    
+    let query = db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(limitNumber)
+      .offset(offset);
+    
+    // Add date filters if provided
+    if (startDate && endDate) {
+      query = query.where(and(
+        gte(notifications.createdAt, new Date(startDate as string)),
+        lte(notifications.createdAt, new Date(endDate as string))
+      ));
+    }
+    
+    const results = await query;
+    
+    // Get total count for pagination
+    const totalCount = await db
+      .select({ count: sql`count(*)` })
+      .from(notifications)
+      .where(eq(notifications.userId, userId));
+    
+    return res.status(200).json({
+      success: true,
+      data: results,
+      pagination: {
+        total: totalCount[0].count,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalCount[0].count / limitNumber)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching notification history:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notification history',
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });

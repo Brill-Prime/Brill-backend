@@ -40,6 +40,13 @@ class FirebaseSyncService {
       return;
     }
 
+    // Skip initialization in development mode if SKIP_DB_CONNECTION_TEST is true
+    if (process.env.NODE_ENV === 'development' && process.env.SKIP_DB_CONNECTION_TEST === 'true') {
+      console.warn('⚠️ Skipping Firebase sync service initialization in development mode');
+      this.isInitialized = true;
+      return;
+    }
+
     console.log('🔄 Initializing Firebase sync service...');
 
     try {
@@ -51,13 +58,24 @@ class FirebaseSyncService {
       console.log('✅ Firebase sync service initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize Firebase sync service:', error);
-      throw error;
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('⚠️ Continuing despite Firebase sync initialization error in development mode');
+        this.isInitialized = true;
+      } else {
+        throw error;
+      }
     }
   }
 
   async syncFirebaseAuthUsers() {
     if (!adminAuth) {
       console.warn('⚠️ Firebase Auth not available - skipping user sync');
+      return;
+    }
+
+    // Skip in development mode if SKIP_DB_CONNECTION_TEST is true
+    if (process.env.NODE_ENV === 'development' && process.env.SKIP_DB_CONNECTION_TEST === 'true') {
+      console.log('⏩ Skipping Firebase Auth users sync in development mode');
       return;
     }
 
@@ -81,6 +99,10 @@ class FirebaseSyncService {
       console.log(`✅ Synced ${totalSynced} Firebase Auth users to PostgreSQL`);
     } catch (error) {
       console.error('❌ Error syncing Firebase Auth users:', error);
+      // Don't throw in development mode
+      if (process.env.NODE_ENV !== 'development') {
+        throw error;
+      }
     }
   }
 
@@ -164,6 +186,12 @@ class FirebaseSyncService {
 
   private async syncUserLocation(firebaseUid: string, locationData: LocationUpdate) {
     try {
+      // Skip in development mode if SKIP_DB_CONNECTION_TEST is true
+      if (process.env.NODE_ENV === 'development' && process.env.SKIP_DB_CONNECTION_TEST === 'true') {
+        console.log(`⏩ Skipping location sync for ${firebaseUid} in development mode`);
+        return;
+      }
+
       const userResult = await db.select().from(users).where(eq(users.firebaseUid, firebaseUid)).limit(1);
 
       if (userResult.length === 0) {
@@ -202,6 +230,10 @@ class FirebaseSyncService {
       }
     } catch (error) {
       console.error(`❌ Error syncing location for user ${firebaseUid}:`, error);
+      // Don't throw in development mode
+      if (process.env.NODE_ENV !== 'development') {
+        throw error;
+      }
     }
   }
 

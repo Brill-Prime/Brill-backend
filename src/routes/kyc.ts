@@ -1,12 +1,105 @@
 
 import express from 'express';
-import { db } from '../db/config';
-import { identityVerifications, verificationDocuments, users } from '../db/schema';
-import { eq, and, desc, isNull } from 'drizzle-orm';
-import { requireAuth } from '../utils/auth';
-import { z } from 'zod';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { db } from '../db';
+import { identityVerifications, verificationDocuments, auditLogs } from '../db/schema';
+import { requireAuth } from '../middleware/auth';
+import * as z from 'zod';
 
 const router = express.Router();
+
+// Helper function to log audit events
+async function logAudit(userId: string, action: string, resourceType: string, resourceId: string, metadata?: any) {
+  await db.insert(auditLogs).values({
+    userId,
+    action,
+    resourceType,
+    resourceId,
+    metadata,
+    createdAt: new Date()
+  });
+}
+
+// Validation schemas
+const personalInfoSchema = z.object({
+  fullName: z.string().min(2).max(100),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  gender: z.enum(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY']),
+  nationality: z.string().min(2).max(50),
+  idType: z.enum(['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD']),
+  idNumber: z.string().min(2).max(50),
+  address: z.string().min(5).max(200).optional()
+});
+
+const businessInfoSchema = z.object({
+  businessName: z.string().min(2).max(100),
+  businessType: z.enum(['SOLE_PROPRIETORSHIP', 'PARTNERSHIP', 'LIMITED_LIABILITY', 'CORPORATION', 'OTHER']),
+  registrationNumber: z.string().min(2).max(50),
+  taxId: z.string().min(2).max(50).optional(),
+  businessAddress: z.string().min(5).max(200),
+  businessPhone: z.string().min(5).max(20),
+  businessEmail: z.string().email(),
+  businessCategory: z.string().min(2).max(50)
+});
+
+const driverInfoSchema = z.object({
+  licenseNumber: z.string().min(2).max(50),
+  licenseExpiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'TRUCK', 'VAN', 'OTHER']),
+  vehicleMake: z.string().min(2).max(50),
+  vehicleModel: z.string().min(2).max(50),
+  vehicleYear: z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  vehicleColor: z.string().min(2).max(30),
+  vehiclePlateNumber: z.string().min(2).max(20)
+});
+
+// Helper function to log audit events
+async function logAudit(userId: number, action: string, entityType: string, entityId?: number, details?: any) {
+  try {
+    await db.insert(auditLogs).values({
+      userId,
+      action,
+      entityType,
+      entityId: entityId?.toString(),
+      details,
+      createdAt: new Date()
+    });
+  } catch (error) {
+    console.error('Error logging audit event:', error);
+  }
+}
+
+// Validation schemas
+const personalInfoSchema = z.object({
+  fullName: z.string().min(2, 'Full name is required'),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  gender: z.enum(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY']),
+  nationality: z.string().min(2, 'Nationality is required'),
+  idType: z.enum(['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD']),
+  idNumber: z.string().min(3, 'ID number is required')
+});
+
+const businessInfoSchema = z.object({
+  businessName: z.string().min(2, 'Business name is required'),
+  businessType: z.enum(['SOLE_PROPRIETORSHIP', 'PARTNERSHIP', 'LIMITED_LIABILITY', 'CORPORATION', 'OTHER']),
+  registrationNumber: z.string().min(3, 'Registration number is required'),
+  taxId: z.string().optional(),
+  businessAddress: z.string().min(5, 'Business address is required'),
+  businessPhone: z.string().min(5, 'Business phone is required'),
+  businessEmail: z.string().email('Valid business email is required'),
+  businessCategory: z.string().min(2, 'Business category is required')
+});
+
+const driverInfoSchema = z.object({
+  licenseNumber: z.string().min(3, 'License number is required'),
+  licenseExpiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'TRUCK', 'VAN', 'OTHER']),
+  vehicleMake: z.string().min(2, 'Vehicle make is required'),
+  vehicleModel: z.string().min(2, 'Vehicle model is required'),
+  vehicleYear: z.number().int().min(1900).max(new Date().getFullYear() + 1),
+  vehicleColor: z.string().min(2, 'Vehicle color is required'),
+  vehiclePlateNumber: z.string().min(2, 'Vehicle plate number is required')
+});
 
 // GET /api/kyc/profile - Get user's KYC profile
 router.get('/profile', requireAuth, async (req, res) => {
@@ -45,6 +138,383 @@ router.get('/profile', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Get KYC profile error:', error);
     res.status(500).json({ success: false, message: 'Failed to get KYC profile' });
+  }
+});
+
+// POST /api/kyc/personal-info - Submit personal KYC information
+router.post('/personal-info', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const validatedData = personalInfoSchema.parse(req.body);
+    
+    // Check if user already has a verification record
+    const existingVerification = await db
+      .select()
+      .from(identityVerifications)
+      .where(and(
+        eq(identityVerifications.userId, userId),
+        eq(identityVerifications.verificationType, 'PERSONAL')
+      ))
+      .limit(1);
+    
+    let verificationId;
+    
+    if (existingVerification.length > 0) {
+      // Update existing verification
+      await db
+        .update(identityVerifications)
+        .set({
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          updatedAt: new Date()
+        })
+        .where(eq(identityVerifications.id, existingVerification[0].id));
+      
+      verificationId = existingVerification[0].id;
+    } else {
+      // Create new verification
+      const [newVerification] = await db
+        .insert(identityVerifications)
+        .values({
+          userId,
+          verificationType: 'PERSONAL',
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          createdAt: new Date()
+        })
+        .returning();
+      
+      verificationId = newVerification.id;
+    }
+    
+    // Log audit event
+    await logAudit(
+      userId,
+      'SUBMIT_PERSONAL_KYC',
+      'IDENTITY_VERIFICATION',
+      verificationId,
+      { verificationType: 'PERSONAL' }
+    );
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Personal information submitted successfully',
+      data: {
+        verificationId,
+        status: 'PENDING_REVIEW'
+      }
+    });
+  } catch (error) {
+    console.error('Submit personal KYC error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit personal information',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/kyc/business-info - Submit business KYC information
+router.post('/business-info', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const validatedData = businessInfoSchema.parse(req.body);
+    
+    // Check if user already has a business verification record
+    const existingVerification = await db
+      .select()
+      .from(identityVerifications)
+      .where(and(
+        eq(identityVerifications.userId, userId),
+        eq(identityVerifications.verificationType, 'BUSINESS')
+      ))
+      .limit(1);
+    
+    let verificationId;
+    
+    if (existingVerification.length > 0) {
+      // Update existing verification
+      await db
+        .update(identityVerifications)
+        .set({
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          updatedAt: new Date()
+        })
+        .where(eq(identityVerifications.id, existingVerification[0].id));
+      
+      verificationId = existingVerification[0].id;
+    } else {
+      // Create new verification
+      const [newVerification] = await db
+        .insert(identityVerifications)
+        .values({
+          userId,
+          verificationType: 'BUSINESS',
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          createdAt: new Date()
+        })
+        .returning();
+      
+      verificationId = newVerification.id;
+    }
+    
+    // Log audit event
+    await logAudit(
+      userId,
+      'SUBMIT_BUSINESS_KYC',
+      'IDENTITY_VERIFICATION',
+      verificationId,
+      { verificationType: 'BUSINESS' }
+    );
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Business information submitted successfully',
+      data: {
+        verificationId,
+        status: 'PENDING_REVIEW'
+      }
+    });
+  } catch (error) {
+    console.error('Submit business KYC error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit business information',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/kyc/driver-info - Submit driver KYC information
+router.post('/driver-info', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user!.id;
+    const validatedData = driverInfoSchema.parse(req.body);
+    
+    // Check if user already has a driver verification record
+    const existingVerification = await db
+      .select()
+      .from(identityVerifications)
+      .where(and(
+        eq(identityVerifications.userId, userId),
+        eq(identityVerifications.verificationType, 'DRIVER')
+      ))
+      .limit(1);
+    
+    let verificationId;
+    
+    if (existingVerification.length > 0) {
+      // Update existing verification
+      await db
+        .update(identityVerifications)
+        .set({
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          updatedAt: new Date()
+        })
+        .where(eq(identityVerifications.id, existingVerification[0].id));
+      
+      verificationId = existingVerification[0].id;
+    } else {
+      // Create new verification
+      const [newVerification] = await db
+        .insert(identityVerifications)
+        .values({
+          userId,
+          verificationType: 'DRIVER',
+          data: { ...validatedData },
+          status: 'PENDING_REVIEW',
+          createdAt: new Date()
+        })
+        .returning();
+      
+      verificationId = newVerification.id;
+    }
+    
+    // Log audit event
+    await logAudit(
+      userId,
+      'SUBMIT_DRIVER_KYC',
+      'IDENTITY_VERIFICATION',
+      verificationId,
+      { verificationType: 'DRIVER' }
+    );
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Driver information submitted successfully',
+      data: {
+        verificationId,
+        status: 'PENDING_REVIEW'
+      }
+    });
+  } catch (error) {
+    console.error('Submit driver KYC error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        errors: error.issues
+      });
+    }
+    
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit driver information',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// GET /api/kyc/requirements - Get KYC requirements based on user role
+router.get('/requirements', requireAuth, async (req, res) => {
+  try {
+    const user = req.user!;
+    const role = req.query.role?.toString() || user.role;
+    
+    // Define requirements based on role
+    const requirements = {
+      CUSTOMER: {
+        personal: {
+          required: true,
+          fields: [
+            { name: 'fullName', type: 'string', required: true },
+            { name: 'dateOfBirth', type: 'date', required: true },
+            { name: 'gender', type: 'enum', required: true, options: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'] },
+            { name: 'nationality', type: 'string', required: true },
+            { name: 'idType', type: 'enum', required: true, options: ['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD'] },
+            { name: 'idNumber', type: 'string', required: true }
+          ],
+          documents: [
+            { type: 'ID_FRONT', required: true, description: 'Front of ID card/passport' },
+            { type: 'ID_BACK', required: true, description: 'Back of ID card' },
+            { type: 'SELFIE', required: true, description: 'Selfie with ID' }
+          ]
+        },
+        business: {
+          required: false
+        },
+        driver: {
+          required: false
+        }
+      },
+      MERCHANT: {
+        personal: {
+          required: true,
+          fields: [
+            { name: 'fullName', type: 'string', required: true },
+            { name: 'dateOfBirth', type: 'date', required: true },
+            { name: 'gender', type: 'enum', required: true, options: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'] },
+            { name: 'nationality', type: 'string', required: true },
+            { name: 'idType', type: 'enum', required: true, options: ['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD'] },
+            { name: 'idNumber', type: 'string', required: true }
+          ],
+          documents: [
+            { type: 'ID_FRONT', required: true, description: 'Front of ID card/passport' },
+            { type: 'ID_BACK', required: true, description: 'Back of ID card' },
+            { type: 'SELFIE', required: true, description: 'Selfie with ID' }
+          ]
+        },
+        business: {
+          required: true,
+          fields: [
+            { name: 'businessName', type: 'string', required: true },
+            { name: 'businessType', type: 'enum', required: true, options: ['SOLE_PROPRIETORSHIP', 'PARTNERSHIP', 'LIMITED_LIABILITY', 'CORPORATION', 'OTHER'] },
+            { name: 'registrationNumber', type: 'string', required: true },
+            { name: 'taxId', type: 'string', required: false },
+            { name: 'businessAddress', type: 'string', required: true },
+            { name: 'businessPhone', type: 'string', required: true },
+            { name: 'businessEmail', type: 'string', required: true },
+            { name: 'businessCategory', type: 'string', required: true }
+          ],
+          documents: [
+            { type: 'BUSINESS_REGISTRATION', required: true, description: 'Business registration certificate' },
+            { type: 'TAX_CERTIFICATE', required: false, description: 'Tax registration certificate' },
+            { type: 'BUSINESS_PERMIT', required: true, description: 'Business operating permit' }
+          ]
+        },
+        driver: {
+          required: false
+        }
+      },
+      DRIVER: {
+        personal: {
+          required: true,
+          fields: [
+            { name: 'fullName', type: 'string', required: true },
+            { name: 'dateOfBirth', type: 'date', required: true },
+            { name: 'gender', type: 'enum', required: true, options: ['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY'] },
+            { name: 'nationality', type: 'string', required: true },
+            { name: 'idType', type: 'enum', required: true, options: ['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD'] },
+            { name: 'idNumber', type: 'string', required: true }
+          ],
+          documents: [
+            { type: 'ID_FRONT', required: true, description: 'Front of ID card/passport' },
+            { type: 'ID_BACK', required: true, description: 'Back of ID card' },
+            { type: 'SELFIE', required: true, description: 'Selfie with ID' }
+          ]
+        },
+        business: {
+          required: false
+        },
+        driver: {
+          required: true,
+          fields: [
+            { name: 'licenseNumber', type: 'string', required: true },
+            { name: 'licenseExpiryDate', type: 'date', required: true },
+            { name: 'vehicleType', type: 'enum', required: true, options: ['CAR', 'MOTORCYCLE', 'TRUCK', 'VAN', 'OTHER'] },
+            { name: 'vehicleMake', type: 'string', required: true },
+            { name: 'vehicleModel', type: 'string', required: true },
+            { name: 'vehicleYear', type: 'number', required: true },
+            { name: 'vehicleColor', type: 'string', required: true },
+            { name: 'vehiclePlateNumber', type: 'string', required: true }
+          ],
+          documents: [
+            { type: 'DRIVERS_LICENSE_FRONT', required: true, description: 'Front of driver\'s license' },
+            { type: 'DRIVERS_LICENSE_BACK', required: true, description: 'Back of driver\'s license' },
+            { type: 'VEHICLE_REGISTRATION', required: true, description: 'Vehicle registration document' },
+            { type: 'VEHICLE_INSURANCE', required: true, description: 'Vehicle insurance certificate' },
+            { type: 'VEHICLE_PHOTO', required: true, description: 'Photo of vehicle' }
+          ]
+        }
+      }
+    };
+    
+    // Get requirements for the specified role
+    const roleRequirements = requirements[role as keyof typeof requirements] || requirements.CUSTOMER;
+    
+    return res.status(200).json({
+      success: true,
+      data: roleRequirements
+    });
+  } catch (error) {
+    console.error('Get KYC requirements error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get KYC requirements',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 });
 

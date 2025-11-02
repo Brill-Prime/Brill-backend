@@ -5,20 +5,22 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "npx -p typescript tsc --noEmitOnError false || true",
-    "build:transpile": "NODE_OPTIONS='--max-old-space-size=4096' npx ts-node --transpile-only --project tsconfig.server.json src/index.ts",
-    "start": "NODE_OPTIONS='--max-old-space-size=4096' npx ts-node --transpile-only --project tsconfig.server.json src/index.ts",
-    "dev": "NODE_OPTIONS='--max-old-space-size=4096' npx ts-node --project tsconfig.server.json src/index.ts",
+    "build:transpile": "npx ts-node --transpile-only --project tsconfig.server.json src/index.ts",
+    "start": "npx ts-node --transpile-only --project tsconfig.server.json src/index.ts",
+    "dev": "npx ts-node --project tsconfig.server.json src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test-db": "npx ts-node src/scripts/test-db.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@neondatabase/serverless": "^1.0.1",
+    "@supabase/supabase-js": "^2.78.0",
     "@types/express-session": "^1.18.2",
     "@types/firebase": "^2.4.32",
     "@types/jsonwebtoken": "^9.0.10",
@@ -42,7 +44,7 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "node": "^24.7.0",
-    "nodemailer": "^7.0.9",
+    "nodemailer": "^7.0.10",
     "nodemon": "^3.1.10",
     "passport": "^0.7.0",
     "passport-facebook": "^3.0.0",
@@ -62,11 +64,8 @@
     "@types/node": "^24.7.0",
     "@types/nodemailer": "^7.0.2",
     "esbuild": "^0.19.3"
-  }
-
-  ,
+  },
   "engines": {
     "node": "20.x"
   }
-
 }

@@ -1,4 +1,8 @@
 
+// Load environment variables first
+import dotenv from 'dotenv';
+dotenv.config();
+
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
@@ -429,12 +433,19 @@ startEscrowAutoReleaseService();
 // Start Firebase sync service
 startFirebaseSyncService();
 
-// Start server
+// Start server with error handling
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔗 WebSocket server running on ws://0.0.0.0:${PORT}/ws`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log('Firebase Realtime Database is configured.');
+}).on('error', (error: any) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Please check for other running servers or change the PORT in .env`);
+  } else {
+    console.error('❌ Server failed to start:', error);
+  }
+  process.exit(1);
 });
 
 // Helper function to format uptime

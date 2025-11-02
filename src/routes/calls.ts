@@ -2,8 +2,8 @@
 import express from 'express';
 import { z } from 'zod';
 import { db } from '../db/config';
-import { orders, users } from '../db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
+import { orders, users, auditLogs } from '../db/schema';
+import { eq, and, isNull, desc, sql } from 'drizzle-orm';
 import { requireAuth } from '../utils/auth';
 import { getWebSocketService } from '../services/websocket';
 
@@ -27,6 +27,26 @@ const endCallSchema = z.object({
   duration: z.number().optional(),
   reason: z.enum(['COMPLETED', 'CANCELLED', 'REJECTED', 'FAILED']).optional()
 });
+
+const answerCallSchema = z.object({
+  callId: z.string().min(1)
+});
+
+// Helper function to log audit events
+async function logAudit(userId: number, action: string, entityType: string, entityId?: string | number, details?: any) {
+  try {
+    await db.insert(auditLogs).values({
+      userId,
+      action,
+      entityType,
+      entityId: entityId?.toString(),
+      details,
+      createdAt: new Date()
+    });
+  } catch (error) {
+    console.error('Error logging audit event:', error);
+  }
+}
 
 // POST /api/calls/initiate - Initiate a call
 router.post('/initiate', requireAuth, async (req, res) => {
@@ -52,7 +72,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
     }
 
     // Verify user is part of this order
-    const isParticipant = 
+    const isParticipant =
       order.customerId === caller.id ||
       order.merchantId === caller.id ||
       order.driverId === caller.id;
@@ -69,7 +89,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
       .select({
         id: users.id,
         fullName: users.fullName,
-        photoUrl: users.photoUrl,
+        photoUrl: users.profilePicture,
         role: users.role
       })
       .from(users)
@@ -95,7 +115,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
         caller: {
           id: caller.id,
           name: caller.fullName,
-          photoUrl: caller.photoUrl,
+          photoUrl: (caller as any).profilePicture || null,
           role: caller.role
         },
         callType: validatedData.callType,
@@ -111,7 +131,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
         callee: {
           id: callee.id,
           name: callee.fullName,
-          photoUrl: callee.photoUrl,
+          photoUrl: callee.photoUrl || null,
           role: callee.role
         },
         callType: validatedData.callType,
@@ -120,7 +140,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Initiate call error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -136,13 +156,79 @@ router.post('/initiate', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/calls/signal - Send WebRTC signaling data
-router.post('/signal', requireAuth, async (req, res) => {
+// POST /api/calls/answer - Answer a call
+router.post('/answer', requireAuth, async (req, res) => {
   try {
-    const validatedData = callSignalSchema.parse(req.body);
+    const { callId } = req.body;
+    if (!callId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Call ID is required'
+      });
+    }
+
     const user = req.user!;
 
-    // Extract peer ID from call ID (format: call_timestamp_callerId_calleeId)
+    // Extract caller ID from call ID (format: call_timestamp_callerId_calleeId)
+    const callParts = callId.split('_');
+    if (callParts.length !== 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid call ID format'
+      });
+    }
+
+    const callerId = parseInt(callParts[2]);
+    const calleeId = parseInt(callParts[3]);
+
+    // Verify user is the callee
+    if (user.id !== calleeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the call recipient can answer this call'
+      });
+    }
+
+    // Send call answer notification via WebSocket
+    const wsService = getWebSocketService();
+    if (wsService) {
+      await wsService.sendNotificationToUser(callerId.toString(), {
+        type: 'CALL_ANSWERED',
+        callId,
+        answeredBy: {
+          id: user.id,
+          name: user.fullName,
+          photoUrl: user.photoUrl
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Log the call answer event
+    await logAudit(user.id, 'ANSWER_CALL', 'CALL', callId);
+
+    return res.json({
+      success: true,
+      message: 'Call answered successfully',
+      data: { callId }
+    });
+  } catch (error) {
+    console.error('Answer call error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to answer call',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// POST /api/calls/end - End a call
+router.post('/end', requireAuth, async (req, res) => {
+  try {
+    const validatedData = endCallSchema.parse(req.body);
+    const user = req.user!;
+
+    // Extract participants from call ID (format: call_timestamp_callerId_calleeId)
     const callParts = validatedData.callId.split('_');
     if (callParts.length !== 4) {
       return res.status(400).json({
@@ -153,29 +239,58 @@ router.post('/signal', requireAuth, async (req, res) => {
 
     const callerId = parseInt(callParts[2]);
     const calleeId = parseInt(callParts[3]);
-    
-    // Determine peer (the other participant)
-    const peerId = user.id === callerId ? calleeId : callerId;
 
-    // Send signaling data to peer via WebSocket
-    const wsService = getWebSocketService();
-    if (wsService) {
-      await wsService.sendNotificationToUser(peerId.toString(), {
-        type: 'CALL_SIGNAL',
-        callId: validatedData.callId,
-        signalType: validatedData.signalType,
-        signalData: validatedData.signalData,
-        from: user.id
+    // Verify user is a participant
+    if (user.id !== callerId && user.id !== calleeId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only call participants can end this call'
       });
     }
 
-    res.json({
+    // Determine the other participant
+    const otherParticipantId = user.id === callerId ? calleeId : callerId;
+
+    // Send call end notification via WebSocket
+    const wsService = getWebSocketService();
+    if (wsService) {
+      await wsService.sendNotificationToUser(otherParticipantId.toString(), {
+        type: 'CALL_ENDED',
+        callId: validatedData.callId,
+        endedBy: {
+          id: user.id,
+          name: user.fullName
+        },
+        reason: validatedData.reason || 'COMPLETED',
+        duration: validatedData.duration,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Log the call end event
+    await logAudit(
+      user.id,
+      'END_CALL',
+      'CALL',
+      validatedData.callId,
+      {
+        duration: validatedData.duration,
+        reason: validatedData.reason || 'COMPLETED'
+      }
+    );
+
+    return res.json({
       success: true,
-      message: 'Signal sent successfully'
+      message: 'Call ended successfully',
+      data: {
+        callId: validatedData.callId,
+        duration: validatedData.duration,
+        reason: validatedData.reason || 'COMPLETED'
+      }
     });
   } catch (error) {
-    console.error('Call signal error:', error);
-    
+    console.error('End call error:', error);
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -184,12 +299,139 @@ router.post('/signal', requireAuth, async (req, res) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: 'Failed to send signal'
+      message: 'Failed to end call',
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 });
+
+// GET /api/calls/history - Get call history
+router.get('/history', requireAuth, async (req, res) => {
+  try {
+    const user = req.user!;
+    const { page = '1', limit = '20', startDate, endDate } = req.query;
+
+    const pageNumber = parseInt(page as string);
+    const limitNumber = parseInt(limit as string);
+    const offset = (pageNumber - 1) * limitNumber;
+
+    // Get calls from audit logs where user was involved
+    const callLogs = await db
+      .select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        action: auditLogs.action,
+        entityId: auditLogs.entityId,
+        details: auditLogs.details,
+        createdAt: auditLogs.createdAt
+      })
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.userId, user.id),
+        sql`${auditLogs.action} IN ('INITIATE_CALL', 'ANSWER_CALL', 'END_CALL')`,
+        startDate && endDate ?
+          and(
+            sql`${auditLogs.createdAt} >= ${new Date(startDate as string)}`,
+            sql`${auditLogs.createdAt} <= ${new Date(endDate as string)}`
+          ) : undefined
+      ))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limitNumber)
+      .offset(offset);
+
+    // Process call logs to create call history
+    const callHistory = [];
+    const callMap = new Map();
+
+    for (const log of callLogs) {
+      const callId = log.entityId;
+      if (!callId) continue;
+
+      if (!callMap.has(callId)) {
+        callMap.set(callId, {
+          callId,
+          participants: [],
+          actions: [],
+          startTime: null,
+          endTime: null,
+          duration: null,
+          status: 'UNKNOWN'
+        });
+      }
+
+      const call = callMap.get(callId);
+
+      // Add action to call history
+      call.actions.push({
+        action: log.action,
+        userId: log.userId,
+        timestamp: log.createdAt,
+        details: log.details
+      });
+
+      // Update call status based on action
+      if (log.action === 'INITIATE_CALL') {
+        call.status = 'INITIATED';
+        call.startTime = log.createdAt;
+
+        // Extract participants from call ID (format: call_timestamp_callerId_calleeId)
+        const callParts = callId.split('_');
+        if (callParts.length === 4) {
+          const callerId = parseInt(callParts[2]);
+          const calleeId = parseInt(callParts[3]);
+
+          if (!call.participants.includes(callerId)) {
+            call.participants.push(callerId);
+          }
+
+          if (!call.participants.includes(calleeId)) {
+            call.participants.push(calleeId);
+          }
+        }
+      } else if (log.action === 'ANSWER_CALL') {
+        call.status = 'CONNECTED';
+      } else if (log.action === 'END_CALL') {
+        call.status = 'ENDED';
+        call.endTime = log.createdAt;
+        call.duration = log.details?.duration || null;
+        call.endReason = log.details?.reason || 'COMPLETED';
+      }
+    }
+
+    // Convert map to array
+    const calls = Array.from(callMap.values());
+
+    // Get total count for pagination
+    const totalCount = await db
+      .select({ count: sql`count(DISTINCT ${auditLogs.entityId})` })
+      .from(auditLogs)
+      .where(and(
+        eq(auditLogs.userId, user.id),
+        sql`${auditLogs.action} IN ('INITIATE_CALL', 'ANSWER_CALL', 'END_CALL')`
+      ));
+
+    return res.status(200).json({
+      success: true,
+      data: calls,
+      pagination: {
+        total: totalCount[0].count,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalCount[0].count / limitNumber)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching call history:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch call history',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+// end of /history handler
 
 // POST /api/calls/accept - Accept an incoming call
 router.post('/accept', requireAuth, async (req, res) => {
@@ -293,7 +535,7 @@ router.post('/end', requireAuth, async (req, res) => {
     const callParts = validatedData.callId.split('_');
     const callerId = parseInt(callParts[2]);
     const calleeId = parseInt(callParts[3]);
-    
+
     const peerId = user.id === callerId ? calleeId : callerId;
 
     // Notify peer that call ended
@@ -319,7 +561,7 @@ router.post('/end', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('End call error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,

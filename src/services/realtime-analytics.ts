@@ -53,22 +53,32 @@ export class RealTimeAnalytics extends EventEmitter {
     const oneMinuteAgo = new Date(now - 60000);
 
     try {
-      const [activeOrdersCount, recentTransactionsCount] = await Promise.all([
-        db.select({ count: count() })
+      let activeOrdersCount = [{ count: 0 }];
+      let recentTransactionsCount = [{ count: 0 }];
+      
+      try {
+        // Wrap each database query in its own try-catch to handle missing tables
+        activeOrdersCount = await db.select({ count: count() })
           .from(orders)
-          .where(eq(orders.status, 'PENDING')),
-        
-        db.select({ count: count() })
+          .where(eq(orders.status, 'PENDING'));
+      } catch (err) {
+        console.warn('Unable to query orders table, it may not exist yet:', err.message);
+      }
+      
+      try {
+        recentTransactionsCount = await db.select({ count: count() })
           .from(transactions)
-          .where(gte(transactions.createdAt, oneMinuteAgo))
-      ]);
+          .where(gte(transactions.createdAt, oneMinuteAgo));
+      } catch (err) {
+        console.warn('Unable to query transactions table, it may not exist yet:', err.message);
+      }
 
       const systemMetrics = this.getSystemMetrics();
 
       this.currentMetrics = {
         activeUsers: this.memoryStore.get('activeUsers') || 0,
-        activeOrders: Number(activeOrdersCount[0].count),
-        transactionsPerMinute: Number(recentTransactionsCount[0].count),
+        activeOrders: Number(activeOrdersCount[0]?.count || 0),
+        transactionsPerMinute: Number(recentTransactionsCount[0]?.count || 0),
         responseTime: 0,
         errorRate: 0,
         cpuUsage: systemMetrics.cpuUsage,
@@ -77,6 +87,8 @@ export class RealTimeAnalytics extends EventEmitter {
 
     } catch (error) {
       console.error('Error collecting metrics:', error);
+      // Use empty metrics on error
+      this.currentMetrics = this.getEmptyMetrics();
     }
   }
 
