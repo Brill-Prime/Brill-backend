@@ -1,6 +1,6 @@
 import express from 'express';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import { db } from '../db';
+import { db } from '../db/config';
 import { identityVerifications, verificationDocuments, auditLogs } from '../db/schema';
 import { requireAuth } from '../middleware/auth';
 import * as z from 'zod';
