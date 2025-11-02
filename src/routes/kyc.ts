@@ -2,7 +2,7 @@ import express from 'express';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db/config';
 import { identityVerifications, verificationDocuments, auditLogs } from '../db/schema';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth } from '../utils/auth';
 import * as z from 'zod';
 
 const router = express.Router();
