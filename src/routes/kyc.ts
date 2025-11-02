@@ -1,4 +1,3 @@
-
 import express from 'express';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { db } from '../db';
@@ -7,51 +6,6 @@ import { requireAuth } from '../middleware/auth';
 import * as z from 'zod';
 
 const router = express.Router();
-
-// Helper function to log audit events
-async function logAudit(userId: string, action: string, resourceType: string, resourceId: string, metadata?: any) {
-  await db.insert(auditLogs).values({
-    userId,
-    action,
-    resourceType,
-    resourceId,
-    metadata,
-    createdAt: new Date()
-  });
-}
-
-// Validation schemas
-const personalInfoSchema = z.object({
-  fullName: z.string().min(2).max(100),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  gender: z.enum(['MALE', 'FEMALE', 'OTHER', 'PREFER_NOT_TO_SAY']),
-  nationality: z.string().min(2).max(50),
-  idType: z.enum(['NATIONAL_ID', 'PASSPORT', 'DRIVERS_LICENSE', 'VOTERS_CARD']),
-  idNumber: z.string().min(2).max(50),
-  address: z.string().min(5).max(200).optional()
-});
-
-const businessInfoSchema = z.object({
-  businessName: z.string().min(2).max(100),
-  businessType: z.enum(['SOLE_PROPRIETORSHIP', 'PARTNERSHIP', 'LIMITED_LIABILITY', 'CORPORATION', 'OTHER']),
-  registrationNumber: z.string().min(2).max(50),
-  taxId: z.string().min(2).max(50).optional(),
-  businessAddress: z.string().min(5).max(200),
-  businessPhone: z.string().min(5).max(20),
-  businessEmail: z.string().email(),
-  businessCategory: z.string().min(2).max(50)
-});
-
-const driverInfoSchema = z.object({
-  licenseNumber: z.string().min(2).max(50),
-  licenseExpiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  vehicleType: z.enum(['CAR', 'MOTORCYCLE', 'TRUCK', 'VAN', 'OTHER']),
-  vehicleMake: z.string().min(2).max(50),
-  vehicleModel: z.string().min(2).max(50),
-  vehicleYear: z.number().int().min(1900).max(new Date().getFullYear() + 1),
-  vehicleColor: z.string().min(2).max(30),
-  vehiclePlateNumber: z.string().min(2).max(20)
-});
 
 // Helper function to log audit events
 async function logAudit(userId: number, action: string, entityType: string, entityId?: number, details?: any) {
@@ -146,7 +100,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
     const validatedData = personalInfoSchema.parse(req.body);
-    
+
     // Check if user already has a verification record
     const existingVerification = await db
       .select()
@@ -156,9 +110,9 @@ router.post('/personal-info', requireAuth, async (req, res) => {
         eq(identityVerifications.verificationType, 'PERSONAL')
       ))
       .limit(1);
-    
+
     let verificationId;
-    
+
     if (existingVerification.length > 0) {
       // Update existing verification
       await db
@@ -169,7 +123,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
-      
+
       verificationId = existingVerification[0].id;
     } else {
       // Create new verification
@@ -183,10 +137,10 @@ router.post('/personal-info', requireAuth, async (req, res) => {
           createdAt: new Date()
         })
         .returning();
-      
+
       verificationId = newVerification.id;
     }
-    
+
     // Log audit event
     await logAudit(
       userId,
@@ -195,7 +149,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
       verificationId,
       { verificationType: 'PERSONAL' }
     );
-    
+
     return res.status(200).json({
       success: true,
       message: 'Personal information submitted successfully',
@@ -206,7 +160,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Submit personal KYC error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -214,7 +168,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to submit personal information',
@@ -228,7 +182,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
     const validatedData = businessInfoSchema.parse(req.body);
-    
+
     // Check if user already has a business verification record
     const existingVerification = await db
       .select()
@@ -238,9 +192,9 @@ router.post('/business-info', requireAuth, async (req, res) => {
         eq(identityVerifications.verificationType, 'BUSINESS')
       ))
       .limit(1);
-    
+
     let verificationId;
-    
+
     if (existingVerification.length > 0) {
       // Update existing verification
       await db
@@ -251,7 +205,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
-      
+
       verificationId = existingVerification[0].id;
     } else {
       // Create new verification
@@ -265,10 +219,10 @@ router.post('/business-info', requireAuth, async (req, res) => {
           createdAt: new Date()
         })
         .returning();
-      
+
       verificationId = newVerification.id;
     }
-    
+
     // Log audit event
     await logAudit(
       userId,
@@ -277,7 +231,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
       verificationId,
       { verificationType: 'BUSINESS' }
     );
-    
+
     return res.status(200).json({
       success: true,
       message: 'Business information submitted successfully',
@@ -288,7 +242,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Submit business KYC error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -296,7 +250,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to submit business information',
@@ -310,7 +264,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
   try {
     const userId = req.user!.id;
     const validatedData = driverInfoSchema.parse(req.body);
-    
+
     // Check if user already has a driver verification record
     const existingVerification = await db
       .select()
@@ -320,9 +274,9 @@ router.post('/driver-info', requireAuth, async (req, res) => {
         eq(identityVerifications.verificationType, 'DRIVER')
       ))
       .limit(1);
-    
+
     let verificationId;
-    
+
     if (existingVerification.length > 0) {
       // Update existing verification
       await db
@@ -333,7 +287,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
-      
+
       verificationId = existingVerification[0].id;
     } else {
       // Create new verification
@@ -347,10 +301,10 @@ router.post('/driver-info', requireAuth, async (req, res) => {
           createdAt: new Date()
         })
         .returning();
-      
+
       verificationId = newVerification.id;
     }
-    
+
     // Log audit event
     await logAudit(
       userId,
@@ -359,7 +313,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
       verificationId,
       { verificationType: 'DRIVER' }
     );
-    
+
     return res.status(200).json({
       success: true,
       message: 'Driver information submitted successfully',
@@ -370,7 +324,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('Submit driver KYC error:', error);
-    
+
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -378,7 +332,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
         errors: error.issues
       });
     }
-    
+
     return res.status(500).json({
       success: false,
       message: 'Failed to submit driver information',
@@ -392,7 +346,7 @@ router.get('/requirements', requireAuth, async (req, res) => {
   try {
     const user = req.user!;
     const role = req.query.role?.toString() || user.role;
-    
+
     // Define requirements based on role
     const requirements = {
       CUSTOMER: {
@@ -500,10 +454,10 @@ router.get('/requirements', requireAuth, async (req, res) => {
         }
       }
     };
-    
+
     // Get requirements for the specified role
     const roleRequirements = requirements[role as keyof typeof requirements] || requirements.CUSTOMER;
-    
+
     return res.status(200).json({
       success: true,
       data: roleRequirements
