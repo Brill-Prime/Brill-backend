@@ -41,6 +41,7 @@ export const users = pgTable("users", {
   totalRatings: integer("total_ratings").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  metadata: jsonb("metadata").default('{}'),
   deletedAt: timestamp("deleted_at")
 }, (table) => ({
   emailIdx: index("users_email_idx").on(table.email),

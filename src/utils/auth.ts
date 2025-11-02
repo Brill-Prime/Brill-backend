@@ -27,33 +27,30 @@ export interface AuthRequest extends Request {
   };
 }
 
-// Generate JWT token
-export const generateToken = (payload: any, expiresIn: string | number = '24h'): string => {
-  const options: any = {
-    expiresIn,
-    issuer: 'brillprime-api',
-    audience: 'brillprime-app'
-  };
-  return jwt.sign(payload, JWT_SECRET, options);
+// JWT token generation
+export const generateToken = (payload: any, expiresIn: string = '24h'): string => {
+  const jwtSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return jwt.sign(payload, jwtSecret, { expiresIn });
 };
 
-// Verify JWT token
-export const verifyToken = (token: string): Promise<any> => {
-  return new Promise((resolve, reject) => {
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-      if (err) {
-        if (err.name === 'TokenExpiredError') {
-          reject(new Error('TOKEN_EXPIRED'));
-        } else if (err.name === 'JsonWebTokenError') {
-          reject(new Error('INVALID_TOKEN'));
-        } else {
-          reject(new Error('TOKEN_VERIFICATION_FAILED'));
-        }
-      } else {
-        resolve(decoded);
-      }
-    });
-  });
+// JWT token verification
+export const verifyToken = async (token: string): Promise<any> => {
+  const jwtSecret = process.env.JWT_SECRET || process.env.JWT_SECRET_KEY;
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+
+  try {
+    return jwt.verify(token, jwtSecret);
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      throw new Error('TOKEN_EXPIRED');
+    }
+    throw new Error('INVALID_TOKEN');
+  }
 };
 
 // Hash password
@@ -71,7 +68,7 @@ export const comparePassword = async (password: string, hashedPassword: string):
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
         success: false,
@@ -110,7 +107,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         isVerified: user.isVerified || decodedToken.email_verified || false,
         profilePicture: user.profilePicture || undefined
       };
-      
+
       return next();
     } catch (firebaseError: any) {
       // Firebase token verification failed, try JWT as fallback
@@ -172,7 +169,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
 
@@ -225,7 +222,7 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
         }
       }
     }
-    
+
     next();
   } catch (error) {
     console.error('Optional auth middleware error:', error);

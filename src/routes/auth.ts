@@ -1,9 +1,9 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { db } from '../db/config';
-import { users } from '../db/schema';
-import { eq, and, isNull } from 'drizzle-orm';
-import { requireAuth } from '../utils/auth';
+import { users, securityLogs, mfaTokens } from '../db/schema';
+import { eq, and, isNull, gte } from 'drizzle-orm';
+import { requireAuth, generateToken, verifyToken } from '../utils/auth';
 import admin from 'firebase-admin';
 import EmailService from '../services/email';
 import RateLimitingService from '../services/rateLimiting';
