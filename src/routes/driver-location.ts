@@ -63,6 +63,30 @@ router.post('/update', requireAuth, async (req, res) => {
     }
 
     const now = new Date();
+    
+    // Create location object as a proper JSON object
+    const locationData = JSON.stringify({
+      latitude,
+      longitude,
+      heading,
+      speed,
+      accuracy,
+      timestamp: now.toISOString()
+    });
+
+    // Update driver's current location in the database
+    try {
+      const { driverProfiles } = await import('../db/schema');
+      await db.update(driverProfiles)
+        .set({ 
+          currentLocation: locationData,
+          updatedAt: now
+        })
+        .where(eq(driverProfiles.userId, userId));
+    } catch (dbError) {
+      console.error('Database update error:', dbError);
+      // Continue execution even if database update fails
+    }
 
     // Broadcast real-time location update via WebSocket if available
     if ((global as any).io) {
@@ -88,6 +112,7 @@ router.post('/update', requireAuth, async (req, res) => {
         longitude,
         heading,
         speed,
+        accuracy,
         timestamp: now.toISOString()
       }
     });

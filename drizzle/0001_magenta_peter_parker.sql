@@ -138,7 +138,15 @@ ALTER TABLE "driver_profiles" ALTER COLUMN "current_location" SET DATA TYPE json
 ALTER TABLE "driver_profiles" ALTER COLUMN "verification_level" DROP DEFAULT;--> statement-breakpoint
 ALTER TABLE "driver_profiles" ALTER COLUMN "background_check_status" DROP DEFAULT;--> statement-breakpoint
 ALTER TABLE "fraud_alerts" ALTER COLUMN "status" SET DEFAULT 'ACTIVE';--> statement-breakpoint
-ALTER TABLE "fuel_orders" ALTER COLUMN "station_id" SET DATA TYPE integer;--> statement-breakpoint
+-- Safely change station_id to integer. Use a guarded cast so non-numeric
+-- values become NULL instead of causing the migration to fail.
+ALTER TABLE "fuel_orders" ALTER COLUMN "station_id" TYPE integer USING (
+	CASE
+		WHEN station_id ~ '^[0-9]+$' THEN station_id::integer
+		WHEN station_id IS NULL OR trim(station_id) = '' THEN NULL
+		ELSE NULL
+	END
+);--> statement-breakpoint
 ALTER TABLE "fuel_orders" ALTER COLUMN "station_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "fuel_orders" ALTER COLUMN "unit_price" SET DATA TYPE numeric(10, 2);--> statement-breakpoint
 ALTER TABLE "fuel_orders" ALTER COLUMN "unit_price" DROP NOT NULL;--> statement-breakpoint

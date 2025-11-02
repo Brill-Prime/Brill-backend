@@ -8,13 +8,15 @@ import * as z from 'zod';
 const router = express.Router();
 
 // Helper function to log audit events
+// Keep types aligned with the schema: entityId should be a number (or undefined).
 async function logAudit(userId: number, action: string, entityType: string, entityId?: number, details?: any) {
   try {
     await db.insert(auditLogs).values({
       userId,
       action,
       entityType,
-      entityId: entityId?.toString(),
+      // don't coerce to string — audit_logs.entity_id is an integer column
+      entityId: entityId ?? null,
       details,
       createdAt: new Date()
     });
@@ -119,7 +121,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
         .update(identityVerifications)
         .set({
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
@@ -133,7 +135,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
           userId,
           verificationType: 'PERSONAL',
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           createdAt: new Date()
         })
         .returning();
@@ -155,7 +157,7 @@ router.post('/personal-info', requireAuth, async (req, res) => {
       message: 'Personal information submitted successfully',
       data: {
         verificationId,
-        status: 'PENDING_REVIEW'
+        status: 'PENDING'
       }
     });
   } catch (error) {
@@ -201,7 +203,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
         .update(identityVerifications)
         .set({
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
@@ -215,7 +217,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
           userId,
           verificationType: 'BUSINESS',
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           createdAt: new Date()
         })
         .returning();
@@ -237,7 +239,7 @@ router.post('/business-info', requireAuth, async (req, res) => {
       message: 'Business information submitted successfully',
       data: {
         verificationId,
-        status: 'PENDING_REVIEW'
+        status: 'PENDING'
       }
     });
   } catch (error) {
@@ -283,7 +285,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
         .update(identityVerifications)
         .set({
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           updatedAt: new Date()
         })
         .where(eq(identityVerifications.id, existingVerification[0].id));
@@ -297,7 +299,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
           userId,
           verificationType: 'DRIVER',
           data: { ...validatedData },
-          status: 'PENDING_REVIEW',
+          status: 'PENDING',
           createdAt: new Date()
         })
         .returning();
@@ -319,7 +321,7 @@ router.post('/driver-info', requireAuth, async (req, res) => {
       message: 'Driver information submitted successfully',
       data: {
         verificationId,
-        status: 'PENDING_REVIEW'
+        status: 'PENDING'
       }
     });
   } catch (error) {
@@ -503,7 +505,7 @@ router.post('/documents', requireAuth, async (req, res) => {
         id: newDocument.id,
         documentType: newDocument.documentType,
         status: newDocument.status,
-        uploadedAt: newDocument.uploadedAt
+        uploadedAt: newDocument.createdAt
       }
     });
   } catch (error) {
@@ -569,7 +571,7 @@ router.post('/submit', requireAuth, async (req, res) => {
       .values({
         userId,
         verificationType: documentType,
-        verificationData: {
+        data: {
           documentType,
           documentNumber,
           documentImageUrl,
@@ -607,7 +609,7 @@ router.get('/status', requireAuth, async (req, res) => {
       data: {
         status: verification?.status || 'PENDING',
         submittedAt: verification?.createdAt || null,
-        verifiedAt: verification?.verifiedAt || null
+        verifiedAt: verification?.updatedAt || null
       }
     });
   } catch (error) {

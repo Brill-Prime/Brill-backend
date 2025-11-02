@@ -33,14 +33,27 @@ const answerCallSchema = z.object({
 });
 
 // Helper function to log audit events
+// auditLogs.entityId is an integer column in the schema. For string IDs
+// (e.g. call IDs like "call_..."), store them inside `details` and keep
+// entityId numeric when possible. This avoids Drizzle/TS type errors.
 async function logAudit(userId: number, action: string, entityType: string, entityId?: string | number, details?: any) {
   try {
+    let dbEntityId: number | null = null;
+    let dbDetails: any = details ?? {};
+
+    if (typeof entityId === 'number') {
+      dbEntityId = entityId;
+    } else if (typeof entityId === 'string') {
+      // preserve the string id in details so we can query it later
+      dbDetails = { ...(details || {}), entityIdString: entityId };
+    }
+
     await db.insert(auditLogs).values({
       userId,
       action,
       entityType,
-      entityId: entityId?.toString(),
-      details,
+      entityId: dbEntityId,
+      details: dbDetails,
       createdAt: new Date()
     });
   } catch (error) {
@@ -89,7 +102,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
       .select({
         id: users.id,
         fullName: users.fullName,
-        photoUrl: users.profilePicture,
+        profilePicture: users.profilePicture,
         role: users.role
       })
       .from(users)
@@ -131,7 +144,7 @@ router.post('/initiate', requireAuth, async (req, res) => {
         callee: {
           id: callee.id,
           name: callee.fullName,
-          photoUrl: callee.photoUrl || null,
+          photoUrl: callee.profilePicture || null,
           role: callee.role
         },
         callType: validatedData.callType,
@@ -198,7 +211,7 @@ router.post('/answer', requireAuth, async (req, res) => {
         answeredBy: {
           id: user.id,
           name: user.fullName,
-          photoUrl: user.photoUrl
+          photoUrl: user.profilePicture
         },
         timestamp: new Date().toISOString()
       });
@@ -346,7 +359,7 @@ router.get('/history', requireAuth, async (req, res) => {
     const callMap = new Map();
 
     for (const log of callLogs) {
-      const callId = log.entityId;
+      const callId = (log.details as any)?.entityIdString || log.entityId?.toString();
       if (!callId) continue;
 
       if (!callMap.has(callId)) {
@@ -395,8 +408,8 @@ router.get('/history', requireAuth, async (req, res) => {
       } else if (log.action === 'END_CALL') {
         call.status = 'ENDED';
         call.endTime = log.createdAt;
-        call.duration = log.details?.duration || null;
-        call.endReason = log.details?.reason || 'COMPLETED';
+        call.duration = (log.details as any)?.duration || null;
+        call.endReason = (log.details as any)?.reason || 'COMPLETED';
       }
     }
 
@@ -416,10 +429,10 @@ router.get('/history', requireAuth, async (req, res) => {
       success: true,
       data: calls,
       pagination: {
-        total: totalCount[0].count,
+        total: (totalCount[0] as any).count,
         page: pageNumber,
         limit: limitNumber,
-        totalPages: Math.ceil(totalCount[0].count / limitNumber)
+        totalPages: Math.ceil((totalCount[0] as any).count / limitNumber)
       }
     });
   } catch (error) {
@@ -459,7 +472,7 @@ router.post('/accept', requireAuth, async (req, res) => {
         acceptedBy: {
           id: user.id,
           name: user.fullName,
-          photoUrl: user.photoUrl
+          photoUrl: user.profilePicture
         },
         timestamp: new Date().toISOString()
       });
