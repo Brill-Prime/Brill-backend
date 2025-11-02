@@ -248,4 +248,68 @@ router.put('/:conversationId/read', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/conversations/:partnerId - Delete conversation with a specific partner
+router.delete('/:partnerId', requireAuth, async (req, res) => {
+  try {
+    const userId = (req as any).user.id;
+    const partnerId = parseInt(req.params.partnerId);
+
+    if (isNaN(partnerId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid partner ID'
+      });
+    }
+
+    // Verify that a conversation exists between these users
+    const existingMessages = await db.query.messages.findFirst({
+      where: (messages, { eq, and, or }) =>
+        or(
+          and(
+            eq(messages.senderId, userId),
+            eq(messages.receiverId, partnerId)
+          ),
+          and(
+            eq(messages.senderId, partnerId),
+            eq(messages.receiverId, userId)
+          )
+        )
+    });
+
+    if (!existingMessages) {
+      return res.status(404).json({
+        success: false,
+        message: 'No conversation found with this user'
+      });
+    }
+
+    // Delete all messages between current user and partner
+    await db
+      .delete(messages)
+      .where(
+        or(
+          and(
+            eq(messages.senderId, userId),
+            eq(messages.receiverId, partnerId)
+          ),
+          and(
+            eq(messages.senderId, partnerId),
+            eq(messages.receiverId, userId)
+          )
+        )
+      );
+
+    res.json({
+      success: true,
+      message: 'Conversation deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete conversation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete conversation'
+    });
+  }
+});
+
 export default router;

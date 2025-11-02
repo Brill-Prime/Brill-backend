@@ -646,6 +646,152 @@ router.post('/:id/unlock', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/users/:userId/block - Block a user
+router.post('/:userId/block', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const userId = parseInt(req.params.userId);
+
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+
+    // Get current user's blocked list
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, currentUser.id))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const blockedUsers = (user.metadata as any)?.blockedUsers || [];
+
+    // Check if already blocked
+    if (blockedUsers.includes(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'User is already blocked'
+      });
+    }
+
+    // Add to blocked list
+    blockedUsers.push(userId);
+
+    await db
+      .update(users)
+      .set({
+        metadata: {
+          ...(user.metadata as any || {}),
+          blockedUsers
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, currentUser.id));
+
+    // Log audit
+    await db.insert(auditLogs).values({
+      userId: currentUser.id,
+      action: 'USER_BLOCKED',
+      entityType: 'USER',
+      entityId: userId,
+      details: { blockedUserId: userId }
+    });
+
+    res.json({
+      success: true,
+      message: 'User blocked successfully'
+    });
+  } catch (error) {
+    console.error('Block user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to block user'
+    });
+  }
+});
+
+// DELETE /api/users/:userId/block - Unblock a user
+router.delete('/:userId/block', requireAuth, async (req, res) => {
+  try {
+    const currentUser = req.user!;
+    const userId = parseInt(req.params.userId);
+
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+
+    // Get current user's blocked list
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, currentUser.id))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const blockedUsers = (user.metadata as any)?.blockedUsers || [];
+
+    // Check if user is blocked
+    if (!blockedUsers.includes(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'User is not blocked'
+      });
+    }
+
+    // Remove from blocked list
+    const updatedBlockedUsers = blockedUsers.filter((id: number) => id !== userId);
+
+    await db
+      .update(users)
+      .set({
+        metadata: {
+          ...(user.metadata as any || {}),
+          blockedUsers: updatedBlockedUsers
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, currentUser.id));
+
+    // Log audit
+    await db.insert(auditLogs).values({
+      userId: currentUser.id,
+      action: 'USER_UNBLOCKED',
+      entityType: 'USER',
+      entityId: userId,
+      details: { unblockedUserId: userId }
+    });
+
+    res.json({
+      success: true,
+      message: 'User unblocked successfully'
+    });
+  } catch (error) {
+    console.error('Unblock user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to unblock user'
+    });
+  }
+});
+
 // POST /api/users/:id/mfa/enable - Enable MFA for a user
 router.post('/:id/mfa/enable', requireAuth, requireOwnershipOrAdmin, async (req, res) => {
   try {

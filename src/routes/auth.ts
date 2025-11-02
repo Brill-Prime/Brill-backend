@@ -512,4 +512,166 @@ router.post('/refresh-token', async (req, res) => {
   }
 });
 
+// POST /api/auth/verify-otp - Verify OTP code
+router.post('/verify-otp', authRateLimiter, async (req, res) => {
+  try {
+    const { email, otp, type = 'email' } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and OTP are required'
+      });
+    }
+
+    // Get user
+    const [user] = await db.select().from(users)
+      .where(and(eq(users.email, email), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if OTP exists and is valid in metadata
+    const otpData = (user.metadata as any)?.otp;
+    
+    if (!otpData || !otpData.code || !otpData.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: 'No OTP found. Please request a new one.'
+      });
+    }
+
+    // Check if OTP has expired
+    if (new Date() > new Date(otpData.expiresAt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new one.'
+      });
+    }
+
+    // Verify OTP
+    if (otpData.code !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP code'
+      });
+    }
+
+    // Mark user as verified and clear OTP
+    await db.update(users)
+      .set({
+        isVerified: true,
+        metadata: {
+          ...(user.metadata as any || {}),
+          otp: null
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, user.id));
+
+    // Generate JWT tokens
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET!, { expiresIn: '7d' });
+    const refreshToken = jwt.sign({ id: user.id, type: 'refresh' }, process.env.JWT_SECRET!, { expiresIn: '30d' });
+
+    res.json({
+      success: true,
+      message: 'OTP verified successfully',
+      data: {
+        token,
+        refreshToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          isVerified: true
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify OTP'
+    });
+  }
+});
+
+// POST /api/auth/resend-otp - Resend OTP code
+router.post('/resend-otp', authRateLimiter, async (req, res) => {
+  try {
+    const { email, type = 'email' } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    // Get user
+    const [user] = await db.select().from(users)
+      .where(and(eq(users.email, email), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Generate new 6-digit OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store OTP in user metadata
+    await db.update(users)
+      .set({
+        metadata: {
+          ...(user.metadata as any || {}),
+          otp: {
+            code: otpCode,
+            expiresAt: expiresAt.toISOString(),
+            type
+          }
+        },
+        updatedAt: new Date()
+      })
+      .where(eq(users.id, user.id));
+
+    // Send OTP via email
+    try {
+      await EmailService.sendEmail(
+        email,
+        'Your OTP Code',
+        `<p>Hello ${user.fullName},</p><p>Your OTP code is: <strong>${otpCode}</strong></p><p>This code will expire in 10 minutes.</p>`
+      );
+    } catch (emailError) {
+      console.error('Email send error:', emailError);
+      // Continue even if email fails
+    }
+
+    res.json({
+      success: true,
+      message: 'OTP sent successfully',
+      data: {
+        expiresAt: expiresAt.toISOString(),
+        ...(process.env.NODE_ENV === 'development' && { otp: otpCode })
+      }
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send OTP'
+    });
+  }
+});
+
 export default router;

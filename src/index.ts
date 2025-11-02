@@ -48,6 +48,7 @@ import verificationDocumentsRouter from './routes/verification-documents';
 import securityLogsRouter from './routes/security-logs';
 import trustedDevicesRouter from './routes/trusted-devices';
 import tollGatesRouter from './routes/toll-gates';
+import tollPaymentsRouter from './routes/toll-payments';
 import suspiciousActivitiesRouter from './routes/suspicious-activities';
 import adminUsersRouter from './routes/admin-users';
 import realtimeExamplesRouter from './routes/realtime-examples';
@@ -247,6 +248,9 @@ app.use('/api/trusted-devices', trustedDevicesRouter);
 
 // Toll gates management routes
 app.use('/api/toll-gates', tollGatesRouter);
+
+// Toll payments routes
+app.use('/api/toll-payments', tollPaymentsRouter);
 
 // Suspicious activities management routes
 app.use('/api/suspicious-activities', suspiciousActivitiesRouter);
