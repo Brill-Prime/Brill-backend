@@ -97,21 +97,29 @@ The server automatically starts in development mode via the configured workflow.
 - `GET /api/health` - Detailed health check
 
 ### Authentication
-- `POST /auth/*` - Various auth endpoints
+- `POST /api/auth/verify-otp` - Verify OTP code and receive JWT tokens
+- `POST /api/auth/resend-otp` - Resend OTP code to user's phone
 
 ### Main Resources
 - `/api/users` - User management
+  - `POST /api/users/:userId/block` - Block a user
+  - `DELETE /api/users/:userId/block` - Unblock a user
 - `/api/categories` - Product categories
 - `/api/products` - Product catalog
 - `/api/orders` - Order management
 - `/api/escrows` - Escrow transactions
 - `/api/transactions` - Payment transactions
+- `/api/toll-payments` - Toll gate payment management
+  - `POST /api/toll-payments` - Create toll payment
+  - `GET /api/toll-payments` - Get user's toll payment history
 - `/api/drivers` - Driver management
 - `/api/merchants` - Merchant profiles
 - `/api/support-tickets` - Support system
 - `/api/tracking` - Delivery tracking
 - `/api/analytics` - Analytics data
 - `/api/admin-dashboard` - Admin panel
+- `/api/conversations` - Message conversations
+  - `DELETE /api/conversations/:partnerId` - Delete conversation with a partner
 
 ### Real-time
 - WebSocket endpoint: `ws://your-domain/ws`
@@ -124,13 +132,29 @@ The server automatically starts in development mode via the configured workflow.
 ✅ Node.js upgraded to version 20.x
 ✅ SSL/TLS database connection configured
 ✅ WebSocket service running
-✅ All routes configured
+✅ All routes configured including new endpoints (November 2025)
 ✅ Password strength validation implemented
 ✅ Enhanced health check endpoints
 ✅ Security audit completed
 ⚠️ Optional services (Firebase, Gmail, SMS, Payments) need configuration
 
-## Recent Improvements (October 2025)
+## Recent Improvements
+
+### New Endpoints Added (November 2, 2025)
+- **OTP Verification**: Added OTP verification and resend endpoints for passwordless authentication
+  - POST /api/auth/verify-otp - Verifies OTP code and returns JWT tokens
+  - POST /api/auth/resend-otp - Generates and sends new OTP code
+- **Toll Payments**: Created new toll payment management system
+  - POST /api/toll-payments - Creates toll payment transactions with validation
+  - GET /api/toll-payments - Retrieves user's toll payment history with pagination
+- **User Blocking**: Added user blocking/unblocking functionality
+  - POST /api/users/:userId/block - Blocks a user (stored in user metadata)
+  - DELETE /api/users/:userId/block - Unblocks a user
+- **Conversation Management**: Enhanced conversation deletion
+  - DELETE /api/conversations/:partnerId - Deletes all messages with a conversation partner
+- All new endpoints include proper authentication, validation, error handling, and audit logging
+
+### October 2025
 
 ### Migration to Replit (October 18, 2025)
 - **Environment Setup**: Successfully migrated from external hosting to Replit
