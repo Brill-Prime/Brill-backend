@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../utils/auth';
 import PaystackService from '../services/paystack';
 import { db } from '../db/config';
-import { transactions, users, auditLogs, orders } from '../db/schema';
+import { transactions, users, auditLogs, orders, securityLogs } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 const router = express.Router();
