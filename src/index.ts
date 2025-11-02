@@ -1,4 +1,3 @@
-
 // Load environment variables first
 import dotenv from 'dotenv';
 dotenv.config();
@@ -17,6 +16,7 @@ import productsRouter from './routes/products';
 import ordersRouter from './routes/orders';
 import escrowsRouter from './routes/escrows';
 import transactionsRouter from './routes/transactions';
+import driverRegistrationRoutes from './routes/driver-registration';
 import driversRouter from './routes/drivers';
 import merchantsRouter from './routes/merchants';
 import fuelOrdersRouter from './routes/fuel-orders';
@@ -189,6 +189,9 @@ app.use('/api/escrows', escrowsRouter);
 
 // Transactions management routes
 app.use('/api/transactions', transactionsRouter);
+
+// Driver registration management routes
+app.use('/api/driver-registration', driverRegistrationRoutes);
 
 // Driver profiles management routes
 app.use('/api/drivers', driversRouter);
