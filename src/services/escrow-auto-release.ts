@@ -63,12 +63,6 @@ export async function checkAndReleaseExpiredEscrows() {
 
 // Run this function periodically (e.g., every hour)
 export function startEscrowAutoReleaseService() {
-  // Skip in development mode if database is not available
-  if (process.env.NODE_ENV === 'development' && process.env.SKIP_DB_CONNECTION_TEST === 'true') {
-    console.log('⚠️ Skipping escrow auto-release service in development mode');
-    return;
-  }
-
   // Run immediately on startup
   checkAndReleaseExpiredEscrows();
 

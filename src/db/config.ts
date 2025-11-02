@@ -45,12 +45,6 @@ export const db = drizzle(pool, { schema });
 
 // Test database connection with retry logic
 export async function testConnection(retries = 3): Promise<boolean> {
-  // Skip database connection test in development mode if needed
-  if (process.env.NODE_ENV === 'development' && process.env.SKIP_DB_CONNECTION_TEST === 'true') {
-    console.log('⚠️ Skipping database connection test in development mode');
-    return true;
-  }
-
   for (let i = 0; i < retries; i++) {
     try {
       const client = await pool.connect();
